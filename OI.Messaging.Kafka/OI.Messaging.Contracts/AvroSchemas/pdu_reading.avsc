@@ -1,0 +1,15 @@
+{
+  "type": "record",
+  "name": "PDUReading",
+  "namespace": "OI.Messaging.Contracts.Avro",
+  "fields": [
+    {
+      "name": "id",
+      "type": "string"
+    },
+    {
+      "name": "message",
+      "type": "string"
+    }
+  ]
+}

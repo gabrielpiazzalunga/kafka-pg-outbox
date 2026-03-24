@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+package oi.messaging.contracts;
+
+import "shared/command_envelope.proto";
+import "commands/params/ins_command_params.proto";
+
+option csharp_namespace = "OI.Messaging.Contracts.Proto";
+
+// Hardware configuration command for an Inertial Navigation System.
+// Published on vessel.commands.ins. Message key: payload_id.
+message INSCommand {
+  CommandEnvelope envelope = 1;
+  INSCommandParams params = 2;
+}

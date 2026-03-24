@@ -1,0 +1,62 @@
+trigger: none
+
+pool:
+  vmImage: ubuntu-22.04
+
+resources:
+  repositories:
+    - repository: templates
+      type: git
+      name: TECH-SW-PE/OI.PE.PipelineTemplates
+      ref: refs/heads/main
+
+steps:
+  - template: templates/minver.yml@templates
+
+  - task: UseDotNet@2
+    displayName: "Use .NET 10"
+    inputs:
+      packageType: "sdk"
+      version: "10.x"
+
+  - task: DotNetCoreCLI@2
+    displayName: "Restore Packages"
+    inputs:
+      command: "restore"
+      projects: "src/OI.Messaging.Kafka/OI.Messaging.Kafka.csproj"
+      feedsToUse: "select"
+      verbosityRestore: Normal
+
+  - task: DotNetCoreCLI@2
+    displayName: "Build Packages"
+    inputs:
+      command: "build"
+      projects: "src/OI.Messaging.Kafka/OI.Messaging.Kafka.csproj"
+      arguments: "-c Release"
+
+  - task: DotNetCoreCLI@2
+    displayName: "Pack Packages"
+    inputs:
+      command: "pack"
+      packagesToPack: "src/OI.Messaging.Kafka/OI.Messaging.Kafka.csproj"
+      nobuild: true
+      includesymbols: true
+      includesource: true
+      versioningScheme: "off"
+      buildProperties: "PackageVersion=$(minver.version)"
+      verbosityPack: Normal
+
+  - task: PublishBuildArtifacts@1
+    displayName: "Publish Pipeline Artifact"
+    inputs:
+      PathtoPublish: "$(Build.ArtifactStagingDirectory)"
+      ArtifactName: "OI.Messaging.Kafka"
+      publishLocation: "Container"
+
+  - task: NuGetCommand@2
+    displayName: "Publish NuGet"
+    inputs:
+      command: "push"
+      packagesToPush: "$(Build.ArtifactStagingDirectory)/**/*.nupkg;!$(Build.ArtifactStagingDirectory)/**/*.symbols.nupkg"
+      nuGetFeedType: "internal"
+      publishVstsFeed: "a9ccef66-b9c3-42ca-b550-1b34b08e0be4"

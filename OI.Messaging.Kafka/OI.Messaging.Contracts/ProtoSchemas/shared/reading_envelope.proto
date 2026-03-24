@@ -1,0 +1,22 @@
+syntax = "proto3";
+
+package oi.messaging.contracts;
+
+import "google/protobuf/timestamp.proto";
+import "shared/connection_status.proto";
+
+option csharp_namespace = "OI.Messaging.Contracts.Proto";
+
+// Common fields present on all reading messages. Embedded as the 'envelope' field
+// in every {Type}Reading message.
+message ReadingEnvelope {
+  // Observation timestamp (UTC).
+  google.protobuf.Timestamp ts = 1;
+
+  string vessel_id = 2;
+
+  // Stable unique device identifier — e.g. mbes-001, ins-voy.
+  string payload_id = 3;
+
+  ConnectionStatus connection_status = 4;
+}

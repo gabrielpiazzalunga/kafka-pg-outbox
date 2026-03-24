@@ -1,0 +1,12 @@
+syntax = "proto3";
+
+package oi.messaging.contracts;
+
+option csharp_namespace = "OI.Messaging.Contracts.Proto";
+
+// Category of infrastructure link evaluated by the Topology Health Reporter.
+enum LinkType {
+  LINK_TYPE_UNSPECIFIED = 0;
+  LINK_TYPE_PDU_OUTLET = 1;
+  LINK_TYPE_ENDPOINT = 2;
+}

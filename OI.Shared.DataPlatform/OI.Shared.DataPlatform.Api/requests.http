@@ -1,0 +1,396 @@
+@baseUrl = https://localhost:7024
+
+# ── IDs — update these as you run through the story ──────────────────────────
+# OI Horizon (created in step 1.1)
+@vesselId      = c9e67852-2e78-4017-82ab-fc5977f84f7d
+# Oceanic Surveys Ltd (step 2.1)
+@customerId    = 1
+# North Sea Survey 2026 (step 2.2)
+@projectId     = 2
+# OI Horizon ↔ project link (step 3.1)
+@allocationId  = 1
+# EM 2040 (step 1.2)
+@mbesId        = mbes-001
+# APC PDU (step 1.3)
+@pduId         = pdu-001
+# Applanix POS MV (step 1.4)
+@insId         = ins-001
+
+# ┌─────────────────────────────────────────────────────────────────────────────
+# │  STORY: North Sea Survey 2026
+# │
+# │  1. Register the vessel and its payload sensors
+# │  2. Onboard the customer and create the project
+# │  3. Allocate the vessel to the project
+# │  4. Mount sensors on the allocation
+# │  5. Activate the project and confirm the setup
+# │  6. Issue operational commands to the sensors
+# │  7. Monitor live sensor readings
+# │  8. Wrap up: remove equipment, deallocate vessel, close project
+# └─────────────────────────────────────────────────────────────────────────────
+
+###
+
+# ════════════════════════════════════════════════════════════════════════════════
+# § 1  Register the vessel and its sensors
+# ════════════════════════════════════════════════════════════════════════════════
+
+### 1.1 — Create vessel  (copy returned vesselId → @vesselId above)
+POST {{baseUrl}}/api/vessels
+Content-Type: application/json
+
+{
+  "name": "OI Horizon",
+  "vesselType": "SURVEY",
+  "bridgePhoneNumber": "+44-1234-567890",
+  "captainEmail": "captain.jones@oi.com",
+  "surveyEmail": "survey@oi.com"
+}
+
+###
+
+### 1.2 — Register MBES sensor  (mbes-001)
+POST {{baseUrl}}/api/payloads
+Content-Type: application/json
+
+{
+  "payloadId": "mbes-001",
+  "displayName": "Kongsberg EM 2040",
+  "payloadType": "MBES",
+  "manufacturer": "Kongsberg",
+  "model": "EM 2040",
+  "serialNumber": "EM2040-SN-8821",
+  "label": "hull-center"
+}
+
+###
+
+### 1.3 — Register PDU  (pdu-001)
+POST {{baseUrl}}/api/payloads
+Content-Type: application/json
+
+{
+  "payloadId": "pdu-001",
+  "displayName": "APC PDU Survey Rack",
+  "payloadType": "PDU",
+  "manufacturer": "APC",
+  "model": "AP8841",
+  "serialNumber": "AP8841-SN-0042",
+  "label": "survey-rack-port"
+}
+
+###
+
+### 1.4 — Register INS  (ins-001)
+POST {{baseUrl}}/api/payloads
+Content-Type: application/json
+
+{
+  "payloadId": "ins-001",
+  "displayName": "Applanix POS MV",
+  "payloadType": "INS",
+  "manufacturer": "Applanix",
+  "model": "POS MV WaveMaster II",
+  "serialNumber": "POSMV-SN-5577",
+  "label": "survey-rack-starboard"
+}
+
+###
+
+# ════════════════════════════════════════════════════════════════════════════════
+# § 2  Onboard the customer and create the project
+# ════════════════════════════════════════════════════════════════════════════════
+
+### 2.1 — Create customer  (copy returned id → @customerId above)
+POST {{baseUrl}}/api/customers
+Content-Type: application/json
+
+{
+  "name": "Oceanic Surveys Ltd",
+  "taxNumber": "GB987654321",
+  "billingCountry": "GB",
+  "billingCurrencyIso": "GBP",
+  "parentId": null
+}
+
+###
+
+### 2.2 — Create project in PLANNED status  (copy returned id → @projectId above)
+POST {{baseUrl}}/api/projects
+Content-Type: application/json
+
+{
+  "name": "North Sea Survey 2026",
+  "customerId": 1,
+  "region": "North Sea",
+  "opStartDate": "2026-06-01",
+  "opEndDate": "2026-09-30",
+  "numVesselDays": 120,
+  "projectType": "SURVEY",
+  "projectStatus": "PLANNED",
+  "pidSalesforce": null
+}
+
+###
+
+### 2.3 — Confirm project was created
+GET {{baseUrl}}/api/projects/{{projectId}}
+
+###
+
+# ════════════════════════════════════════════════════════════════════════════════
+# § 3  Allocate the vessel to the project
+# ════════════════════════════════════════════════════════════════════════════════
+
+### 3.1 — Allocate OI Horizon as primary vessel  (copy returned id → @allocationId above)
+POST {{baseUrl}}/api/projects/{{projectId}}/allocations
+Content-Type: application/json
+
+{
+  "vesselId": "{{vesselId}}",
+  "role": "PRIMARY",
+  "startDate": "2026-01-01",
+  "endDate": "2026-09-30"
+}
+
+
+###
+
+### 3.2 — List allocations for the project
+GET {{baseUrl}}/api/projects/{{projectId}}/allocations
+
+###
+
+# ════════════════════════════════════════════════════════════════════════════════
+# § 4  Mount sensors on the allocation
+# ════════════════════════════════════════════════════════════════════════════════
+
+### 4.1 — Mount MBES (primary multibeam)
+POST {{baseUrl}}/api/projects/{{projectId}}/allocations/{{allocationId}}/equipment
+Content-Type: application/json
+
+{
+  "payloadId": "mbes-001",
+  "mountLocation": "hull-center",
+  "usage": "PRIMARY",
+  "desiredHardwareParams": null
+}
+
+###
+
+### 4.2 — Mount PDU (powers the survey rack)
+POST {{baseUrl}}/api/projects/{{projectId}}/allocations/{{allocationId}}/equipment
+Content-Type: application/json
+
+{
+  "payloadId": "pdu-001",
+  "mountLocation": "survey-rack-port",
+  "usage": "PRIMARY",
+  "desiredHardwareParams": null
+}
+
+###
+
+### 4.3 — Mount INS (positioning and motion)
+POST {{baseUrl}}/api/projects/{{projectId}}/allocations/{{allocationId}}/equipment
+Content-Type: application/json
+
+{
+  "payloadId": "ins-001",
+  "mountLocation": "survey-rack-starboard",
+  "usage": "PRIMARY",
+  "desiredHardwareParams": null
+}
+
+###
+
+### 4.4 — Confirm all equipment is mounted
+GET {{baseUrl}}/api/projects/{{projectId}}/allocations/{{allocationId}}/equipment
+
+###
+
+# ════════════════════════════════════════════════════════════════════════════════
+# § 5  Activate the project
+# ════════════════════════════════════════════════════════════════════════════════
+
+### 5.1 — Transition project: PLANNED → ACTIVE
+PUT {{baseUrl}}/api/projects/{{projectId}}/status
+Content-Type: application/json
+
+{
+  "projectStatus": "ACTIVE"
+}
+
+###
+
+# ════════════════════════════════════════════════════════════════════════════════
+# § 6  Issue operational commands to sensors
+# ════════════════════════════════════════════════════════════════════════════════
+
+### 6.1 — PDU: power on outlet 1 (bring up the survey rack)
+POST {{baseUrl}}/api/commands/pdu
+Content-Type: application/json
+
+{
+  "payloadId": "pdu-001",
+  "vesselId": "{{vesselId}}",
+  "issuedBy": "survey.operator@oi.com",
+  "outletIndex": 1,
+  "action": "ON",
+  "sequenceDelayS": null
+}
+
+###
+
+### 6.2 — INS: start alignment
+# POST {{baseUrl}}/api/commands/ins
+# Content-Type: application/json
+
+# {
+#   "payloadId": "ins-001",
+#   "vesselId": "{{vesselId}}",
+#   "issuedBy": "survey.operator@oi.com",
+#   "action": "ALIGN"
+# }
+
+###
+
+### 6.3 — MBES: configure and start pinging
+POST {{baseUrl}}/api/commands/mbes
+Content-Type: application/json
+
+{
+  "payloadId": "mbes-001",
+  "vesselId": "{{vesselId}}",
+  "issuedBy": "survey.operator@oi.com",
+  "frequencyKhz": 300.0,
+  "beamAngleDeg": 130.0,
+  "angleCorrectionDeg": 0.0,
+  "operatingMode": "EQUIDISTANT",
+  "powerLevel": "NORMAL"
+}
+
+###
+
+# ════════════════════════════════════════════════════════════════════════════════
+# § 7  Monitor live sensor readings
+# ════════════════════════════════════════════════════════════════════════════════
+
+### 7.1 — Latest reading for every sensor on the vessel
+GET {{baseUrl}}/api/readings/payload/latest?vesselId={{vesselId}}
+
+###
+
+### 7.2 — Latest MBES reading
+GET {{baseUrl}}/api/readings/mbes/latest?vesselId={{vesselId}}
+
+###
+
+### 7.3 — Latest PDU reading
+GET {{baseUrl}}/api/readings/pdu/latest?vesselId={{vesselId}}
+
+###
+
+### 7.4 — MBES time-series (most recent 20 records)
+GET {{baseUrl}}/api/readings/mbes?vesselId={{vesselId}}&limit=20
+
+###
+
+### 7.5 — MBES time-series for a specific payload (cursor-based, next page)
+GET {{baseUrl}}/api/readings/mbes?payloadId={{mbesId}}&before=2026-06-15T12:00:00Z&limit=20
+
+###
+
+# ════════════════════════════════════════════════════════════════════════════════
+# § 8  Wrap up: shutdown sensors, deallocate vessel, close project
+# ════════════════════════════════════════════════════════════════════════════════
+
+### 8.1 — MBES: stop pinging
+POST {{baseUrl}}/api/commands/mbes
+Content-Type: application/json
+
+{
+  "payloadId": "mbes-001",
+  "vesselId": "{{vesselId}}",
+  "issuedBy": "survey.operator@oi.com",
+  "operatingMode": "PASSIVE"
+}
+
+###
+
+### 8.2 — PDU: power off outlet 1 (shutdown survey rack)
+POST {{baseUrl}}/api/commands/pdu
+Content-Type: application/json
+
+{
+  "payloadId": "pdu-001",
+  "vesselId": "{{vesselId}}",
+  "issuedBy": "survey.operator@oi.com",
+  "outletIndex": 1,
+  "action": "OFF",
+  "sequenceDelayS": 5
+}
+
+###
+
+### 8.3 — Remove MBES from allocation
+DELETE {{baseUrl}}/api/projects/{{projectId}}/allocations/{{allocationId}}/equipment/1
+
+###
+
+### 8.4 — Remove PDU from allocation
+DELETE {{baseUrl}}/api/projects/{{projectId}}/allocations/{{allocationId}}/equipment/2
+
+###
+
+### 8.5 — Remove INS from allocation
+DELETE {{baseUrl}}/api/projects/{{projectId}}/allocations/{{allocationId}}/equipment/3
+
+###
+
+### 8.6 — Deallocate OI Horizon from the project
+DELETE {{baseUrl}}/api/projects/{{projectId}}/allocations/{{allocationId}}
+
+###
+
+### 8.7 — Transition project: ACTIVE → COMPLETED
+PUT {{baseUrl}}/api/projects/{{projectId}}/status
+Content-Type: application/json
+
+{
+  "projectStatus": "COMPLETED"
+}
+
+###
+
+# ════════════════════════════════════════════════════════════════════════════════
+# Reference data (lookups — use anytime)
+# ════════════════════════════════════════════════════════════════════════════════
+
+### Vessel types
+GET {{baseUrl}}/api/reference/vessel-types
+
+###
+
+### Payload types
+GET {{baseUrl}}/api/reference/payload-types
+
+###
+
+### Project types
+GET {{baseUrl}}/api/reference/project-types
+
+###
+
+### Project statuses
+GET {{baseUrl}}/api/reference/project-statuses
+
+###
+
+### Allocation actions
+GET {{baseUrl}}/api/reference/allocation-actions
+
+###
+
+### Health
+GET {{baseUrl}}/health

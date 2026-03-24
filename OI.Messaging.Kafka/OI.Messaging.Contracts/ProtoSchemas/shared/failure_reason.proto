@@ -1,0 +1,14 @@
+syntax = "proto3";
+
+package oi.messaging.contracts;
+
+option csharp_namespace = "OI.Messaging.Contracts.Proto";
+
+// Specific cause of a FAIL link status. Populated only when LinkStatus is FAIL.
+enum FailureReason {
+  FAILURE_REASON_UNSPECIFIED = 0;
+  FAILURE_REASON_OUTLET_OFF = 1;
+  FAILURE_REASON_NO_CURRENT_DRAW = 2;
+  FAILURE_REASON_ENDPOINT_UNREACHABLE = 3;
+  FAILURE_REASON_OBSERVATION_STALE = 4;
+}

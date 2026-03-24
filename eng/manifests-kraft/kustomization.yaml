@@ -1,0 +1,18 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - kafka.yaml
+  - schema-registry.yaml
+  - init-topics.yaml
+  - control-center.yaml
+  - postgres.yaml
+  - debezium.yaml
+  - init-debezium-connector.yaml
+  - kafkaconnector.yaml
+  - configmapdebezium.yaml
+  - configmapkafka.yaml
+  - secretspg.yaml
+  - secretskafka.yaml
+  - serviceaccount.yaml
+  # - debezium-outbox-new.yaml

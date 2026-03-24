@@ -1,0 +1,41 @@
+syntax = "proto3";
+
+package oi.messaging.contracts;
+
+import "google/protobuf/timestamp.proto";
+import "shared/command_outcome.proto";
+import "commands/params/mbes_command_params.proto";
+import "commands/params/pdu_command_params.proto";
+import "commands/params/ins_command_params.proto";
+
+option csharp_namespace = "OI.Messaging.Contracts.Proto";
+
+// ACK or FAIL response from the vessel Configurator App for any command type.
+// Published on vessel.commands.response. Message key: payload_id.
+// Correlated to the originating command via command_id.
+// confirmed_params carries the same type as the originating command params,
+// reflecting what the device actually applied.
+message CommandResponse {
+  // Correlates this response to the originating command.
+  string command_id = 1;
+
+  string vessel_id = 2;
+
+  string payload_id = 3;
+
+  CommandOutcome status = 4;
+
+  // Timestamp when the device confirmed the command was applied. Absent on FAILED.
+  optional google.protobuf.Timestamp applied_at = 5;
+
+  // Human-readable failure description from the device or Configurator App. Absent on APPLIED.
+  optional string failure_reason = 6;
+
+  // Confirmed hardware params as returned by the device after application.
+  // Absent on FAILED. The oneof branch identifies the command type.
+  oneof confirmed_params {
+    MBESCommandParams mbes_params = 7;
+    PDUCommandParams  pdu_params  = 8;
+    INSCommandParams  ins_params  = 9;
+  }
+}

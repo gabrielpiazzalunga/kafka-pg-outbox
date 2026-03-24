@@ -1,0 +1,46 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: connector-config
+  namespace: default
+data:
+  connector.json: |
+    {
+      "name": "outbox-connector",
+      "config": {
+        "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
+        "database.hostname": "postgres",
+        "database.port": "5432",
+        "database.user": "postgres",
+        "database.password": "postgres",
+        "database.dbname": "oi_data_platform",
+        "topic.prefix": "oi_data_platform",
+        "slot.name": "debezium_outbox_slot",
+        "publication.name": "debezium_outbox_pub",
+        "plugin.name": "pgoutput",
+        "table.include.list": "public.outbox",
+        "snapshot.mode": "never",
+        "tombstones.on.delete": "false",
+        "heartbeat.interval.ms": "5000",
+        "predicates": "isHeartbeat",
+        "predicates.isHeartbeat.type": "org.apache.kafka.connect.transforms.predicates.TopicNameMatches",
+        "predicates.isHeartbeat.pattern": "__debezium-heartbeat.*",
+        "transforms": "dropHeartbeats,outbox",
+        "transforms.dropHeartbeats.type": "org.apache.kafka.connect.transforms.Filter",
+        "transforms.dropHeartbeats.predicate": "isHeartbeat",
+        "transforms.outbox.type": "io.debezium.transforms.outbox.EventRouter",
+        "transforms.outbox.route.by.field": "aggregate_type",
+        "transforms.outbox.route.topic.replacement": "${routedByValue}.events",
+        "transforms.outbox.table.field.event.key": "aggregate_id",
+        "transforms.outbox.table.fields.additional.placement": "type:header:eventType",
+        "key.converter": "org.apache.kafka.connect.storage.StringConverter",
+        "value.converter": "io.debezium.converters.BinaryDataConverter",
+        "value.converter.delegate.converter.type": "io.confluent.connect.avro.AvroConverter",
+        "value.converter.delegate.converter.type.schema.registry.url": "http://schema-registry:8081",
+        "value.converter.delegate.converter.type.auto.register.schemas": "false",
+        "value.converter.delegate.converter.type.use.latest.version": "true",
+        "errors.tolerance": "none",
+        "errors.log.enable": "true",
+        "errors.log.include.messages": "true"
+      }
+    }

@@ -1,0 +1,45 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: init-topics
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: init-topics
+  template:
+    metadata:
+      labels:
+        app: init-topics
+    spec:
+      restartPolicy: Always
+      initContainers:
+      - name: kafka-topic-creator
+        image: confluentinc/cp-kafka:7.5.0
+        env:
+          - name: SCHEMA_REGISTRY_URL
+            value: "http://schema-registry:8081"
+        command: ["sh", "-c", "
+          until /usr/bin/kafka-topics --bootstrap-server kafka:9092 --list; do
+            echo 'Waiting for Kafka...';
+            sleep 5;
+          done;
+
+          for topic in $(/usr/bin/kafka-topics --bootstrap-server kafka:9092 --list | grep '^localdev.'); do
+            echo \"Deleting topic: $topic\";
+            /usr/bin/kafka-topics --bootstrap-server kafka:9092 --delete --topic $topic;
+          done;
+
+          /usr/bin/kafka-topics --bootstrap-server kafka:9092 --create --topic localdev.TestTopic --partitions 1 --config cleanup.policy=compact;
+          /usr/bin/kafka-topics --bootstrap-server kafka:9092 --create --topic pdu-readings --partitions 1 --config cleanup.policy=compact;
+          /usr/bin/kafka-topics --bootstrap-server kafka:9092 --create --topic pdu-readings-avro --partitions 1 --config cleanup.policy=compact;
+          /usr/bin/kafka-topics --bootstrap-server kafka:9092 --create --topic debezium-connect-offsets --partitions 1 --config cleanup.policy=compact;
+          /usr/bin/kafka-topics --bootstrap-server kafka:9092 --create --topic debezium-connect-statuses --partitions 1 --config cleanup.policy=compact;
+          /usr/bin/kafka-topics --bootstrap-server kafka:9092 --create --topic debezium-connect-configs --partitions 1 --config cleanup.policy=compact;
+
+        "]
+      containers:
+      - name: main-container
+        image: alpine:latest
+        command: ["tail", "-f", "/dev/null"]

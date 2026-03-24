@@ -1,0 +1,74 @@
+syntax = "proto3";
+
+package oi.messaging.contracts;
+
+import "shared/reading_envelope.proto";
+
+option csharp_namespace = "OI.Messaging.Contracts.Proto";
+
+// Inertial Navigation System reading (e.g. Applanix POS MV).
+// Published on vessel.readings.ins.
+// All payload-specific fields are optional — they may be absent when
+// envelope.connection_status is DISCONNECTED or DEGRADED.
+message INSReading {
+  ReadingEnvelope envelope = 1;
+
+  // Operating mode — e.g. Nav: Aligned, Degraded, Attitude.
+  optional string pos_mode = 2;
+
+  // OK | ERROR.
+  optional string imu_status = 3;
+
+  // Solution type code — e.g. CA (combined), GPS.
+  optional string nav_status = 4;
+
+  // GAMS heading solution status — OK | NOT_READY.
+  optional string gams_status = 5;
+
+  optional double latitude_deg = 6;
+  optional double longitude_deg = 7;
+  optional double altitude_m = 8;
+
+  // 1-sigma position accuracy estimate in metres.
+  optional double position_accuracy_m = 9;
+
+  optional double roll_deg = 10;
+  optional double pitch_deg = 11;
+
+  // True heading in degrees.
+  optional double heading_deg = 12;
+
+  // 1-sigma attitude accuracy in degrees.
+  optional double roll_accuracy_deg = 13;
+  optional double pitch_accuracy_deg = 14;
+  optional double heading_accuracy_deg = 15;
+
+  // North velocity component in m/s.
+  optional double velocity_north_ms = 16;
+  optional double velocity_east_ms = 17;
+  optional double velocity_down_ms = 18;
+
+  // 1-sigma velocity accuracy in m/s.
+  optional double velocity_north_accuracy_ms = 19;
+  optional double velocity_east_accuracy_ms = 20;
+  optional double velocity_down_accuracy_ms = 21;
+
+  // Ground speed in knots.
+  optional double speed_knots = 22;
+
+  // Course over ground in degrees.
+  optional double track_deg = 23;
+
+  // Real-time heave in metres. Positive = upward.
+  optional double heave_m = 24;
+
+  // Longitudinal angular rate in deg/s.
+  optional double angular_rate_longitudinal_degs = 25;
+  optional double angular_rate_transverse_degs = 26;
+  optional double angular_rate_vertical_degs = 27;
+
+  // Longitudinal acceleration in m/s².
+  optional double accel_longitudinal_ms2 = 28;
+  optional double accel_transverse_ms2 = 29;
+  optional double accel_vertical_ms2 = 30;
+}

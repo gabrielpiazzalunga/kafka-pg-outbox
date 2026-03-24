@@ -1,0 +1,29 @@
+# Build output
+bin/
+obj/
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+
+# Rider
+.idea/
+
+# VS Code
+.vscode/
+
+# NuGet
+*.nupkg
+*.snupkg
+packages/
+
+# dotnet tool manifest (keep if you want tools pinned to the repo)
+# .config/dotnet-tools.json
+
+# Generated Avro artifacts (avrogen.sh output)
+generated/
+
+# OS
+.DS_Store
+Thumbs.db

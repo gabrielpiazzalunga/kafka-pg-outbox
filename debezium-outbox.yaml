@@ -1,0 +1,366 @@
+# =============================================================================
+# Debezium Outbox Pattern — PostgreSQL → Kafka (Avro)
+# =============================================================================
+#
+# Prerequisites:
+#   1. PostgreSQL with logical replication enabled:
+#        wal_level = logical
+#        max_replication_slots = 5
+#        max_wal_senders = 5
+#
+#   2. Grant replication permissions to the DB user:
+#        ALTER ROLE <user> REPLICATION LOGIN;
+#        GRANT SELECT ON TABLE public.outbox TO <user>;
+#
+#   3. Create the outbox table:
+#        CREATE TABLE public.outbox (
+#          id            UUID        NOT NULL PRIMARY KEY DEFAULT gen_random_uuid(),
+#          aggregatetype VARCHAR(255) NOT NULL,   -- used for topic routing
+#          aggregateid   VARCHAR(255) NOT NULL,   -- used as Kafka message key
+#          type          VARCHAR(255) NOT NULL,   -- event type (e.g. OrderCreated)
+#          payload       JSONB       NOT NULL,    -- domain event payload (NOT bytea — see README)
+#          timestamp     TIMESTAMPTZ NOT NULL DEFAULT now()
+#        );
+#        CREATE INDEX ON public.outbox (aggregatetype);
+#
+#   4. Build a custom Kafka Connect image (debezium + confluent avro converter):
+#        FROM debezium/connect:2.7
+#        RUN confluent-hub install --no-prompt confluentinc/kafka-connect-avro-converter:7.6.0
+#
+#      Tag it and push: e.g. your-registry/debezium-connect-avro:2.7
+#      Then update the image field in the Deployment below.
+#
+# After applying:
+#   kubectl apply -f debezium-outbox.yaml
+#   # Wait for the Job to register the connector (~30s after Connect is ready)
+#   kubectl logs -n debezium job/register-connector
+#
+# Topic naming convention (EventRouter default):
+#   Kafka topic = <aggregatetype>.events
+#   e.g. aggregatetype="order" → topic "order.events"
+# =============================================================================
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: debezium
+
+---
+# ---------------------------------------------------------------------------
+# Secrets — replace values with base64-encoded strings or use a secret store
+# (e.g. Sealed Secrets, External Secrets Operator, Vault injector)
+# ---------------------------------------------------------------------------
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgres-credentials
+  namespace: debezium
+type: Opaque
+stringData:
+  username: "debezium_user"       # replace
+  password: "debezium_password"   # replace
+  hostname: "postgres.default.svc.cluster.local"  # replace
+  port: "5432"
+  dbname: "myapp"                 # replace
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: kafka-credentials
+  namespace: debezium
+type: Opaque
+stringData:
+  bootstrap-servers: "kafka.default.svc.cluster.local:9092"  # replace
+  schema-registry-url: "http://schema-registry.default.svc.cluster.local:8081"  # replace
+
+---
+# ---------------------------------------------------------------------------
+# ConfigMap — Kafka Connect worker-level configuration
+# ---------------------------------------------------------------------------
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kafka-connect-config
+  namespace: debezium
+data:
+  connect-distributed.properties: |
+    # Worker identity
+    group.id=debezium-outbox-connect-cluster
+
+    # Kafka bootstrap
+    bootstrap.servers=${env:KAFKA_BOOTSTRAP_SERVERS}
+
+    # Internal topics — must exist or be auto-created with enough replication
+    config.storage.topic=debezium-connect-configs
+    offset.storage.topic=debezium-connect-offsets
+    status.storage.topic=debezium-connect-statuses
+    config.storage.replication.factor=1    # increase for production
+    offset.storage.replication.factor=1
+    status.storage.replication.factor=1
+    offset.flush.interval.ms=10000
+
+    # Default converters for internal connect protocol
+    # (overridden per-connector in the connector config below)
+    key.converter=org.apache.kafka.connect.json.JsonConverter
+    key.converter.schemas.enable=false
+    value.converter.schemas.enable=false
+
+    # REST API (used by the registration Job)
+    rest.port=8083
+    rest.advertised.host.name=${env:POD_IP}
+
+    # Plugin path — debezium/connect image places plugins here
+    plugin.path=/kafka/connect
+
+---
+# ---------------------------------------------------------------------------
+# Connector config — stored in a ConfigMap, applied via Job (see below)
+# ---------------------------------------------------------------------------
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: connector-config
+  namespace: debezium
+data:
+  connector.json: |
+    {
+      "name": "outbox-connector",
+      "config": {
+        "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
+
+        "database.hostname":  "${file:/opt/kafka/external-configuration/postgres-credentials/hostname}",
+        "database.port":      "${file:/opt/kafka/external-configuration/postgres-credentials/port}",
+        "database.user":      "${file:/opt/kafka/external-configuration/postgres-credentials/username}",
+        "database.password":  "${file:/opt/kafka/external-configuration/postgres-credentials/password}",
+        "database.dbname":    "${file:/opt/kafka/external-configuration/postgres-credentials/dbname}",
+
+        "topic.prefix":        "myapp",
+        "slot.name":           "debezium_outbox_slot",
+        "publication.name":    "debezium_outbox_pub",
+        "plugin.name":         "pgoutput",
+
+        "table.include.list":  "public.outbox",
+        "heartbeat.interval.ms": "5000",
+        "tombstones.on.delete": "false",
+
+        "snapshot.mode": "never",
+
+        "transforms":                                        "outbox",
+        "transforms.outbox.type":                           "io.debezium.transforms.outbox.EventRouter",
+        "transforms.outbox.route.topic.replacement":        "${routedByValue}.events",
+        "transforms.outbox.table.field.event.id":           "id",
+        "transforms.outbox.table.field.event.key":          "aggregateid",
+        "transforms.outbox.table.field.event.payload":      "payload",
+        "transforms.outbox.table.field.event.type":         "type",
+        "transforms.outbox.route.by.field":                 "aggregatetype",
+        "transforms.outbox.table.fields.additional.placement": "type:header:eventType",
+
+        "key.converter":                                     "org.apache.kafka.connect.storage.StringConverter",
+        "value.converter":                                   "io.confluent.connect.avro.AvroConverter",
+        "value.converter.schema.registry.url":               "${file:/opt/kafka/external-configuration/kafka-credentials/schema-registry-url}",
+        "value.converter.schemas.enable":                    "false",
+        "value.converter.auto.register.schemas":             "true",
+        "value.converter.subject.name.strategy":             "io.confluent.kafka.serializers.subject.TopicNameStrategy",
+
+        "errors.tolerance":                                  "none",
+        "errors.log.enable":                                 "true",
+        "errors.log.include.messages":                       "true"
+      }
+    }
+
+---
+# ---------------------------------------------------------------------------
+# ServiceAccount & RBAC (minimal — connect only needs pod identity)
+# ---------------------------------------------------------------------------
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kafka-connect
+  namespace: debezium
+
+---
+# ---------------------------------------------------------------------------
+# Deployment — Kafka Connect workers
+# ---------------------------------------------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kafka-connect
+  namespace: debezium
+  labels:
+    app: kafka-connect
+spec:
+  replicas: 1   # scale to 2+ for HA; group.id ensures they form a cluster
+  selector:
+    matchLabels:
+      app: kafka-connect
+  template:
+    metadata:
+      labels:
+        app: kafka-connect
+    spec:
+      serviceAccountName: kafka-connect
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: kafka-connect
+          # Replace with your custom image (debezium + confluent avro converter)
+          # Dockerfile: FROM debezium/connect:2.7
+          #             RUN confluent-hub install --no-prompt confluentinc/kafka-connect-avro-converter:7.6.0
+          image: your-registry/debezium-connect-avro:2.7  # replace
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8083
+              name: rest-api
+          env:
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              valueFrom:
+                secretKeyRef:
+                  name: kafka-credentials
+                  key: bootstrap-servers
+            # Pass the connect properties file
+            - name: KAFKA_CONNECT_ADDITIONAL_PROPERTIES_FILE
+              value: /opt/kafka/config/connect-distributed.properties
+            # JVM tuning
+            - name: KAFKA_HEAP_OPTS
+              value: "-Xms512m -Xmx1g"
+            - name: KAFKA_JVM_PERFORMANCE_OPTS
+              value: "-XX:+UseG1GC -XX:MaxGCPauseMillis=100"
+          volumeMounts:
+            - name: connect-config
+              mountPath: /opt/kafka/config/connect-distributed.properties
+              subPath: connect-distributed.properties
+            # Mount secrets as files — used by Debezium's FileConfigProvider
+            - name: postgres-credentials
+              mountPath: /opt/kafka/external-configuration/postgres-credentials
+              readOnly: true
+            - name: kafka-credentials
+              mountPath: /opt/kafka/external-configuration/kafka-credentials
+              readOnly: true
+          readinessProbe:
+            httpGet:
+              path: /connectors
+              port: 8083
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            failureThreshold: 5
+          livenessProbe:
+            httpGet:
+              path: /connectors
+              port: 8083
+            initialDelaySeconds: 120
+            periodSeconds: 30
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "768Mi"
+            limits:
+              cpu: "1500m"
+              memory: "1.5Gi"
+      volumes:
+        - name: connect-config
+          configMap:
+            name: kafka-connect-config
+        - name: postgres-credentials
+          secret:
+            secretName: postgres-credentials
+        - name: kafka-credentials
+          secret:
+            secretName: kafka-credentials
+
+---
+# ---------------------------------------------------------------------------
+# Service — exposes Kafka Connect REST API within the cluster
+# ---------------------------------------------------------------------------
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka-connect
+  namespace: debezium
+  labels:
+    app: kafka-connect
+spec:
+  selector:
+    app: kafka-connect
+  ports:
+    - name: rest-api
+      port: 8083
+      targetPort: 8083
+  type: ClusterIP
+
+---
+# ---------------------------------------------------------------------------
+# Job — registers (or updates) the connector via the REST API
+# Re-run anytime you change connector.json:
+#   kubectl delete job register-connector -n debezium
+#   kubectl apply -f debezium-outbox.yaml
+# ---------------------------------------------------------------------------
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: register-connector
+  namespace: debezium
+spec:
+  ttlSecondsAfterFinished: 300
+  backoffLimit: 10
+  template:
+    spec:
+      restartPolicy: OnFailure
+      initContainers:
+        # Wait until Kafka Connect REST API is healthy before registering
+        - name: wait-for-connect
+          image: curlimages/curl:8.7.1
+          command:
+            - sh
+            - -c
+            - |
+              until curl -sf http://kafka-connect.default.svc.cluster.local:8083/connectors; do
+                echo "Waiting for Kafka Connect..."
+                sleep 5
+              done
+      containers:
+        - name: register
+          image: curlimages/curl:8.7.1
+          command:
+            - sh
+            - -c
+            - |
+              CONNECT_URL="http://kafka-connect.default.svc.cluster.local:8083"
+              CONNECTOR_NAME="outbox-connector"
+              CONFIG_FILE="/connector-config/connector.json"
+
+              # Check if connector already exists
+              HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+                "$CONNECT_URL/connectors/$CONNECTOR_NAME")
+
+              if [ "$HTTP_STATUS" = "200" ]; then
+                echo "Connector exists — updating config..."
+                curl -sf -X PUT \
+                  -H "Content-Type: application/json" \
+                  --data "$(cat $CONFIG_FILE | python3 -c 'import sys,json; d=json.load(sys.stdin); print(json.dumps(d["config"]))')" \
+                  "$CONNECT_URL/connectors/$CONNECTOR_NAME/config"
+              else
+                echo "Registering new connector..."
+                curl -sf -X POST \
+                  -H "Content-Type: application/json" \
+                  --data @$CONFIG_FILE \
+                  "$CONNECT_URL/connectors"
+              fi
+
+              echo ""
+              echo "Done. Connector status:"
+              curl -sf "$CONNECT_URL/connectors/$CONNECTOR_NAME/status" | \
+                python3 -c 'import sys,json; d=json.load(sys.stdin); print(json.dumps(d, indent=2))'
+          volumeMounts:
+            - name: connector-config
+              mountPath: /connector-config
+      volumes:
+        - name: connector-config
+          configMap:
+            name: connector-config

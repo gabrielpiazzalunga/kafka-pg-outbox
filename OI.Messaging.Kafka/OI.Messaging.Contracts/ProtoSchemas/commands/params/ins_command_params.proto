@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package oi.messaging.contracts;
+
+option csharp_namespace = "OI.Messaging.Contracts.Proto";
+
+// Hardware configuration parameters for an Inertial Navigation System command.
+message INSCommandParams {
+  INSAction action = 1;
+}
+
+enum INSAction {
+  INS_ACTION_UNSPECIFIED = 0;
+  INS_ACTION_RECONNECT = 1;
+  INS_ACTION_RESTART = 2;
+  INS_ACTION_ALIGN = 3;
+}

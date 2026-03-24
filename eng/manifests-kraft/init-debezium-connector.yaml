@@ -1,0 +1,73 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: register-connector
+  namespace: default
+spec:
+  ttlSecondsAfterFinished: 300
+  backoffLimit: 10
+  template:
+    spec:
+      restartPolicy: OnFailure
+      initContainers:
+        - name: wait-for-connect
+          image: curlimages/curl:8.7.1
+          command:
+            - sh
+            - -c
+            - |
+              until curl -sf http://kafka-connect.default.svc.cluster.local:8083/connectors; do
+                echo "Waiting for Kafka Connect..."
+                sleep 5
+              done
+              echo "Kafka Connect is ready."
+      containers:
+        - name: register
+          image: curlimages/curl:8.7.1
+          command:
+            - sh
+            - -c
+            - |
+              CONNECT_URL="http://kafka-connect.default.svc.cluster.local:8083"
+              CONNECTOR_NAME="outbox-connector"
+              CONFIG_FILE="/connector-config/connector.json"
+
+              HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+                "$CONNECT_URL/connectors/$CONNECTOR_NAME")
+
+              if [ "$HTTP_STATUS" = "200" ]; then
+                echo "Connector exists — deleting and re-registering..."
+                curl -sf -X DELETE "$CONNECT_URL/connectors/$CONNECTOR_NAME"
+                sleep 2
+              fi
+
+              echo "Registering connector..."
+              RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
+                -H "Content-Type: application/json" \
+                --data @$CONFIG_FILE \
+                "$CONNECT_URL/connectors")
+
+              HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+              BODY=$(echo "$RESPONSE" | head -1)
+
+              echo "HTTP $HTTP_CODE"
+              echo "$BODY"
+
+              if [ "$HTTP_CODE" != "201" ]; then
+                echo "Registration failed!"
+                exit 1
+              fi
+
+              echo "Registration successful. Waiting for connector to start..."
+              sleep 5
+
+              echo "Connector status:"
+              curl -s "$CONNECT_URL/connectors/$CONNECTOR_NAME/status"
+              exit 0
+          volumeMounts:
+            - name: connector-config
+              mountPath: /connector-config
+      volumes:
+        - name: connector-config
+          configMap:
+            name: connector-config

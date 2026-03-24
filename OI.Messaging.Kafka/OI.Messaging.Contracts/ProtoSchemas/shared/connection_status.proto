@@ -1,0 +1,14 @@
+syntax = "proto3";
+
+package oi.messaging.contracts;
+
+option csharp_namespace = "OI.Messaging.Contracts.Proto";
+
+// Connector-level connection state. Present on every reading regardless of payload type.
+// When DISCONNECTED or DEGRADED, payload-specific fields may be absent.
+enum ConnectionStatus {
+  CONNECTION_STATUS_UNSPECIFIED = 0;
+  CONNECTION_STATUS_CONNECTED = 1;
+  CONNECTION_STATUS_DISCONNECTED = 2;
+  CONNECTION_STATUS_DEGRADED = 3;
+}

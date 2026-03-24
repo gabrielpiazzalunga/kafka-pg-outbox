@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Dapper" Version="2.*" />
+    <PackageReference Include="Npgsql" Version="9.*" />
+    <PackageReference Include="dbup-postgresql" Version="5.*" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.*" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.*" />
+    <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.*" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.*" />
+    <PackageReference Include="Confluent.SchemaRegistry.Serdes.Avro" Version="2.13.*" />
+    <PackageReference Include="Apache.Avro" Version="1.12.*" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Migrations\*.sql" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="OI.Shared.DataPlatform.Application" />
+    <InternalsVisibleTo Include="OI.Shared.DataPlatform.Infrastructure.Tests" />
+    <InternalsVisibleTo Include="OI.Shared.DataPlatform.Application.Tests" />
+    <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\OI.Messaging.Kafka\OI.Messaging.Contracts\OI.Messaging.Contracts.csproj" />
+    <ProjectReference Include="..\..\OI.Messaging.Kafka\OI.Messaging.Kafka\OI.Messaging.Kafka.csproj" />
+    <ProjectReference Include="..\OI.Shared.DataPlatform.Contracts\OI.Shared.DataPlatform.Contracts.csproj" />
+  </ItemGroup>
+
+</Project>

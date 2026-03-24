@@ -1,0 +1,85 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kafka
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kafka
+  template:
+    metadata:
+      labels:
+        app: kafka
+    spec:
+      enableServiceLinks: false
+      containers:
+        - name: kafka
+          image: confluentinc/cp-kafka:7.5.0
+          ports:
+            - containerPort: 9092  # PLAINTEXT — in-cluster clients
+            - containerPort: 9093  # CONTROLLER — KRaft Raft protocol (internal only)
+            - containerPort: 29092 # PLAINTEXT_HOST — host/external access
+          env:
+          # KRaft identity
+          - name: KAFKA_NODE_ID
+            value: "1"
+          - name: KAFKA_PROCESS_ROLES
+            value: "broker,controller"
+          - name: CLUSTER_ID
+            value: "MkU3OEVBNTcwNTJENDM2Qk"  # stable base64url UUID; triggers auto storage format
+
+          # Listeners
+          - name: KAFKA_LISTENERS
+            value: "PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093,PLAINTEXT_HOST://0.0.0.0:29092"
+          - name: KAFKA_ADVERTISED_LISTENERS
+            value: "PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092"
+          - name: KAFKA_LISTENER_SECURITY_PROTOCOL_MAP
+            value: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT"
+          - name: KAFKA_INTER_BROKER_LISTENER_NAME
+            value: "PLAINTEXT"
+          - name: KAFKA_CONTROLLER_LISTENER_NAMES
+            value: "CONTROLLER"
+          - name: KAFKA_CONTROLLER_QUORUM_VOTERS
+            value: "1@localhost:9093"  # combined mode: controller is co-located in the same pod
+
+          # Storage
+          - name: KAFKA_LOG_DIRS
+            value: "/tmp/kraft-combined-logs"
+
+          # Topic defaults
+          - name: KAFKA_AUTO_CREATE_TOPICS_ENABLE
+            value: "true"
+          - name: KAFKA_NUM_PARTITIONS
+            value: "1"
+          - name: KAFKA_DEFAULT_REPLICATION_FACTOR
+            value: "1"
+
+          # Single-node replication factors (prevents startup warnings)
+          - name: KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR
+            value: "1"
+          - name: KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR
+            value: "1"
+          - name: KAFKA_TRANSACTION_STATE_LOG_MIN_ISR
+            value: "1"
+      restartPolicy: Always
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka
+  namespace: default
+spec:
+  ports:
+  - port: 9092
+    targetPort: 9092
+    name: plaintext       # in-cluster clients (schema-registry, consumers, producers)
+  - port: 29092
+    targetPort: 29092
+    name: plaintext-host  # host access via LoadBalancer (e.g. kafka-topics CLI)
+  # Port 9093 (CONTROLLER) is intentionally not exposed — internal Raft only
+  selector:
+    app: kafka
+  type: LoadBalancer

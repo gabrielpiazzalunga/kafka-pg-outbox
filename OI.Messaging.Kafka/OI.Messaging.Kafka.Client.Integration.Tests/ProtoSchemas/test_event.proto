@@ -1,0 +1,10 @@
+syntax = "proto3";
+
+package oi.messaging.kafka.integration.tests;
+
+option csharp_namespace = "OI.Messaging.Kafka.Client.Integration.Tests";
+
+message TestEvent {
+  string id = 1;
+  string payload = 2;
+}

@@ -1,0 +1,74 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: debezium
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: debezium
+  template:
+    metadata:
+      labels:
+        app: debezium
+    spec:
+      enableServiceLinks: false
+      initContainers:
+        - name: download-avro-jar
+          image: alpine:latest
+          command: ["sh", "-c", "
+            mkdir -p /external-plugins/avro;
+            wget -O /external-plugins/avro/kafka-connect-avro-converter.jar https://packages.confluent.io/maven/io/confluent/kafka-connect-avro-converter/7.5.1/kafka-connect-avro-converter-7.5.1.jar;
+            wget -O /external-plugins/avro/kafka-connect-avro-data.jar https://packages.confluent.io/maven/io/confluent/kafka-connect-avro-data/7.5.1/kafka-connect-avro-data-7.5.1.jar;
+            wget -O /external-plugins/avro/kafka-schema-registry-client.jar https://packages.confluent.io/maven/io/confluent/kafka-schema-registry-client/7.5.1/kafka-schema-registry-client-7.5.1.jar;
+            wget -O /external-plugins/avro/common-config.jar https://packages.confluent.io/maven/io/confluent/common-config/7.5.1/common-config-7.5.1.jar;
+            wget -O /external-plugins/avro/common-utils.jar https://packages.confluent.io/maven/io/confluent/common-utils/7.5.1/common-utils-7.5.1.jar;
+            wget -O /external-plugins/avro/avro.jar https://repo1.maven.org/maven2/org/apache/avro/avro/1.11.3/avro-1.11.3.jar;
+            wget -O /external-plugins/avro/debezium-core.jar https://repo1.maven.org/maven2/io/debezium/debezium-core/2.7.4.Final/debezium-core-2.7.4.Final.jar;
+          "]
+          volumeMounts:
+            - name: external-plugins
+              mountPath: /external-plugins
+      containers:
+        - name: debezium
+          image: quay.io/debezium/connect:2.7
+          ports:
+            - containerPort: 8083
+          env:
+            - name: BOOTSTRAP_SERVERS
+              value: "kafka:9092"
+            - name: "CONNECT_PLUGIN_PATH"
+              value: "/kafka/connect,/external-plugins"
+            - name: "CONNECT_SCHEMA_REGISTRY_URL"
+              value: "http://schema-registry:8081"
+            - name: GROUP_ID
+              value: "1"
+            - name: CONFIG_STORAGE_TOPIC
+              value: "my_connect_configs"
+            - name: OFFSET_STORAGE_TOPIC
+              value: "my_connect_offsets"
+            - name: STATUS_STORAGE_TOPIC
+              value: "my_connect_statuses"
+            
+            - name: CONNECT_KEY_CONVERTER
+              value: "io.confluent.connect.avro.AvroConverter"
+            - name: CONNECT_KEY_CONVERTER_SCHEMA_REGISTRY_URL
+              value: "http://schema-registry:8081"
+            
+            - name: CONNECT_VALUE_CONVERTER
+              value: "io.confluent.connect.avro.AvroConverter"
+            - name: CONNECT_VALUE_CONVERTER_SCHEMA_REGISTRY_URL
+              value: "http://schema-registry:8081"
+              
+            - name: "INTERNAL_KEY_CONVERTER"
+              value: "org.apache.kafka.connect.json.JsonConverter"
+            - name: "INTERNAL_VALUE_CONVERTER"
+              value: "org.apache.kafka.connect.json.JsonConverter"
+          volumeMounts:
+            - name: external-plugins
+              mountPath: /external-plugins
+      volumes:
+        - name: external-plugins
+          emptyDir: {}
+      restartPolicy: Always

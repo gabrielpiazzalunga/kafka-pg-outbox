@@ -1,0 +1,141 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kafka-connect
+  namespace: default
+  labels:
+    app: kafka-connect
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kafka-connect
+  template:
+    metadata:
+      labels:
+        app: kafka-connect
+    spec:
+      serviceAccountName: kafka-connect
+      terminationGracePeriodSeconds: 60
+      initContainers:
+        # Downloads Debezium PostgreSQL connector directly from Maven Central
+        # Avoids confluent-hub which is unreliable in the cp-kafka-connect image
+        - name: install-debezium-postgres
+          image: alpine:3.19
+          command:
+            - sh
+            - -c
+            - |
+              apk add --no-cache curl
+              DEBEZIUM_VERSION="2.7.0.Final"
+              echo "Downloading Debezium PostgreSQL connector ${DEBEZIUM_VERSION}..."
+              curl -L -o /tmp/debezium-postgres.tar.gz \
+                "https://repo1.maven.org/maven2/io/debezium/debezium-connector-postgres/${DEBEZIUM_VERSION}/debezium-connector-postgres-${DEBEZIUM_VERSION}-plugin.tar.gz"
+              mkdir -p /custom-plugins/debezium-connector-postgres
+              tar -xzf /tmp/debezium-postgres.tar.gz -C /custom-plugins/debezium-connector-postgres --strip-components=1
+              echo "Installed jars:"
+              find /custom-plugins -name "*.jar"
+          volumeMounts:
+            - name: connect-plugins
+              mountPath: /custom-plugins
+      containers:
+        - name: kafka-connect
+          image: confluentinc/cp-kafka-connect:7.6.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8083
+              name: rest-api
+          env:
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: CONNECT_REST_ADVERTISED_HOST_NAME
+              value: "$(POD_IP)"
+            - name: CONNECT_BOOTSTRAP_SERVERS
+              valueFrom:
+                secretKeyRef:
+                  name: kafka-credentials
+                  key: bootstrap-servers
+            - name: CONNECT_GROUP_ID
+              value: "debezium-outbox-connect-cluster"
+            - name: CONNECT_CONFIG_STORAGE_TOPIC
+              value: "debezium-connect-configs"
+            - name: CONNECT_OFFSET_STORAGE_TOPIC
+              value: "debezium-connect-offsets"
+            - name: CONNECT_STATUS_STORAGE_TOPIC
+              value: "debezium-connect-statuses"
+            - name: CONNECT_CONFIG_STORAGE_REPLICATION_FACTOR
+              value: "1"
+            - name: CONNECT_OFFSET_STORAGE_REPLICATION_FACTOR
+              value: "1"
+            - name: CONNECT_STATUS_STORAGE_REPLICATION_FACTOR
+              value: "1"
+            - name: CONNECT_KEY_CONVERTER
+              value: "org.apache.kafka.connect.storage.StringConverter"
+            - name: CONNECT_VALUE_CONVERTER
+              value: "org.apache.kafka.connect.json.JsonConverter"
+            - name: CONNECT_VALUE_CONVERTER_SCHEMAS_ENABLE
+              value: "false"
+            - name: CONNECT_PLUGIN_PATH
+              value: "/usr/share/java,/usr/share/confluent-hub-components,/custom-plugins"
+            - name: KAFKA_HEAP_OPTS
+              value: "-Xms512m -Xmx1g"
+            - name: KAFKA_JVM_PERFORMANCE_OPTS
+              value: "-XX:+UseG1GC -XX:MaxGCPauseMillis=100"
+          volumeMounts:
+            - name: connect-plugins
+              mountPath: /custom-plugins
+            - name: postgres-credentials
+              mountPath: /opt/kafka/external-configuration/postgres-credentials
+              readOnly: true
+            - name: kafka-credentials
+              mountPath: /opt/kafka/external-configuration/kafka-credentials
+              readOnly: true
+          readinessProbe:
+            httpGet:
+              path: /connectors
+              port: 8083
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            failureThreshold: 5
+          livenessProbe:
+            httpGet:
+              path: /connectors
+              port: 8083
+            initialDelaySeconds: 120
+            periodSeconds: 30
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "768Mi"
+            limits:
+              cpu: "1500m"
+              memory: "1.5Gi"
+      volumes:
+        - name: connect-plugins
+          emptyDir: {}
+        - name: postgres-credentials
+          secret:
+            secretName: postgres-credentials
+        - name: kafka-credentials
+          secret:
+            secretName: kafka-credentials
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka-connect
+  namespace: default
+  labels:
+    app: kafka-connect
+spec:
+  selector:
+    app: kafka-connect
+  ports:
+    - name: rest-api
+      port: 8083
+      targetPort: 8083
+  type: ClusterIP
