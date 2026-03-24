@@ -7,7 +7,6 @@ resources:
   - init-topics.yaml
   - control-center.yaml
   - postgres.yaml
-  - debezium.yaml
   - init-debezium-connector.yaml
   - kafkaconnector.yaml
   - configmapdebezium.yaml
@@ -15,4 +14,5 @@ resources:
   - secretspg.yaml
   - secretskafka.yaml
   - serviceaccount.yaml
+  # - debezium.yaml
   # - debezium-outbox-new.yaml

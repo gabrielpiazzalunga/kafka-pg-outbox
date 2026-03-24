@@ -34,7 +34,7 @@ stringData:
   password: "postgres"
   hostname: "postgres"
   port: "5432"
-  dbname: "oi_data_platform"
+  dbname: "messaging_outbox"
 
 ---
 apiVersion: v1
@@ -63,8 +63,8 @@ data:
         "database.port": "5432",
         "database.user": "postgres",
         "database.password": "postgres",
-        "database.dbname": "oi_data_platform",
-        "topic.prefix": "oi_data_platform",
+        "database.dbname": "messaging_outbox",
+        "topic.prefix": "messaging_outbox",
         "slot.name": "debezium_outbox_slot",
         "publication.name": "debezium_outbox_pub",
         "plugin.name": "pgoutput",
@@ -80,12 +80,12 @@ data:
         "transforms.dropHeartbeats.predicate": "isHeartbeat",
         "transforms.outbox.type": "io.debezium.transforms.outbox.EventRouter",
         "transforms.outbox.route.by.field": "aggregate_type",
-        "transforms.outbox.route.topic.replacement": "${routedByValue}.events",
+        "transforms.outbox.route.topic.replacement": "${routedByValue}",
         "transforms.outbox.table.field.event.key": "aggregate_id",
         "transforms.outbox.table.fields.additional.placement": "type:header:eventType",
         "key.converter": "org.apache.kafka.connect.storage.StringConverter",
         "value.converter": "io.debezium.converters.BinaryDataConverter",
-        "value.converter.delegate.converter.type": "io.confluent.connect.avro.AvroConverter",
+        "value.converter.delegate.converter.type": "io.confluent.connect.protobuf.ProtobufConverter",
         "value.converter.delegate.converter.type.schema.registry.url": "http://schema-registry:8081",
         "value.converter.delegate.converter.type.auto.register.schemas": "false",
         "value.converter.delegate.converter.type.use.latest.version": "true",

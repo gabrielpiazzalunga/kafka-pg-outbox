@@ -7,7 +7,7 @@ resources:
   repositories:
     - repository: templates
       type: git
-      name: TECH-SW-PE/OI.PE.PipelineTemplates
+      name: TECH-SW-PE/PE.PipelineTemplates
       ref: refs/heads/main
 
 steps:
@@ -23,7 +23,7 @@ steps:
     displayName: "Restore Packages"
     inputs:
       command: "restore"
-      projects: "src/OI.Messaging.Kafka/OI.Messaging.Kafka.csproj"
+      projects: "src/Messaging.Kafka/Messaging.Kafka.csproj"
       feedsToUse: "select"
       verbosityRestore: Normal
 
@@ -31,14 +31,14 @@ steps:
     displayName: "Build Packages"
     inputs:
       command: "build"
-      projects: "src/OI.Messaging.Kafka/OI.Messaging.Kafka.csproj"
+      projects: "src/Messaging.Kafka/Messaging.Kafka.csproj"
       arguments: "-c Release"
 
   - task: DotNetCoreCLI@2
     displayName: "Pack Packages"
     inputs:
       command: "pack"
-      packagesToPack: "src/OI.Messaging.Kafka/OI.Messaging.Kafka.csproj"
+      packagesToPack: "src/Messaging.Kafka/Messaging.Kafka.csproj"
       nobuild: true
       includesymbols: true
       includesource: true
@@ -50,7 +50,7 @@ steps:
     displayName: "Publish Pipeline Artifact"
     inputs:
       PathtoPublish: "$(Build.ArtifactStagingDirectory)"
-      ArtifactName: "OI.Messaging.Kafka"
+      ArtifactName: "Messaging.Kafka"
       publishLocation: "Container"
 
   - task: NuGetCommand@2

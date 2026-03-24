@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+package oi.messaging.contracts;
+
+import "shared/command_envelope.proto";
+import "commands/params/mbes_command_params.proto";
+
+option csharp_namespace = "Messaging.Contracts.Proto";
+
+// Hardware configuration command for a Multibeam Echosounder.
+// Published on vessel.commands.mbes. Message key: payload_id.
+message MBESCommand {
+  CommandEnvelope envelope = 1;
+  MBESCommandParams params = 2;
+}

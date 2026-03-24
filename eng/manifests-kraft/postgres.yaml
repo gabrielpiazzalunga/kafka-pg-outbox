@@ -37,7 +37,7 @@ spec:
             - name: POSTGRES_PASSWORD
               value: "postgres"
             - name: POSTGRES_DB
-              value: "oi_data_platform"
+              value: "messaging_outbox"
             - name: POSTGRES_USER
               value: "postgres"
           volumeMounts:

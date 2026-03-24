@@ -1,0 +1,12 @@
+syntax = "proto3";
+
+package oi.messaging.contracts;
+
+option csharp_namespace = "Messaging.Contracts.Proto";
+
+// Final outcome of a hardware configuration command.
+enum CommandOutcome {
+  COMMAND_OUTCOME_UNSPECIFIED = 0;
+  COMMAND_OUTCOME_APPLIED = 1;
+  COMMAND_OUTCOME_FAILED = 2;
+}

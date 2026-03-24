@@ -1,0 +1,26 @@
+syntax = "proto3";
+
+package oi.messaging.contracts;
+
+option csharp_namespace = "Messaging.Contracts.Proto";
+
+// Hardware configuration parameters for a PDU outlet command.
+// All commands target a specific outlet by index.
+message PDUCommandParams {
+  // Target outlet on the PDU (1-based index).
+  int32 outlet_index = 1;
+
+  PDUOutletAction action = 2;
+
+  // Optional delay in seconds before applying the action, for power sequencing.
+  optional int32 sequence_delay_s = 3;
+}
+
+enum PDUOutletAction {
+  PDU_OUTLET_ACTION_UNSPECIFIED = 0;
+  PDU_OUTLET_ACTION_ON = 1;
+  PDU_OUTLET_ACTION_OFF = 2;
+  PDU_OUTLET_ACTION_REBOOT = 3;
+  PDU_OUTLET_ACTION_LOCK = 4;
+  PDU_OUTLET_ACTION_UNLOCK = 5;
+}

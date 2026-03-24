@@ -1,0 +1,9 @@
+syntax = "proto3";
+
+package Messaging.Contracts.Proto;
+option csharp_namespace = "Messaging.Contracts.Proto";
+
+message SampleEvent {
+    string id = 1;
+    string message = 2;
+}

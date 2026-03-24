@@ -1,4 +1,4 @@
-# OI.Messaging.Kafka
+# Messaging.Kafka
 
 A reusable .NET package for producing messages to Kafka with Avro schema registry support and built-in resilience (retry, circuit breaker, timeout via Polly).
 
@@ -206,14 +206,14 @@ The settings below control this buffer (advanced use only — not exposed as con
 
 ## Running the Client App
 
-The `OI.Messaging.Kafka.Client` console app can run in two modes.
+The `Messaging.Kafka.Client` console app can run in two modes.
 
 ### Normal mode
 
 Produces a message every 5 seconds indefinitely (requires the local Kafka stack to be running):
 
 ```bash
-dotnet run --project src/OI.Messaging.Kafka.Client
+dotnet run --project src/Messaging.Kafka.Client
 ```
 
 ### Load test mode
@@ -221,13 +221,13 @@ dotnet run --project src/OI.Messaging.Kafka.Client
 Fires `<N>` messages as fast as possible, waits for all of them to be consumed, then prints a throughput summary and exits:
 
 ```bash
-dotnet run --project src/OI.Messaging.Kafka.Client -- --load <N>
+dotnet run --project src/Messaging.Kafka.Client -- --load <N>
 ```
 
 Example:
 
 ```bash
-dotnet run --project OI.Messaging.Kafka/OI.Messaging.Kafka.Client -- --load 10000
+dotnet run --project Messaging.Kafka/Messaging.Kafka.Client -- --load 10000
 ```
 
 Sample output:
@@ -275,7 +275,7 @@ The results above were produced with the following settings (`appsettings.json`)
 
 ```json
 "ProducerConfig": {
-  "ClientName": "oi-messaging-kafka-client",
+  "ClientName": "messaging-kafka-client",
   "ProduceTimeout": 20,
   "LingerMs": 5
 },
@@ -290,7 +290,7 @@ The results above were produced with the following settings (`appsettings.json`)
 
 ## Avro Code Generation
 
-Avro C# classes are generated from `.avsc` schema files located in `src/OI.Messaging.Kafka/Models/AvroSchemas/`.
+Avro C# classes are generated from `.avsc` schema files located in `src/Messaging.Kafka/Models/AvroSchemas/`.
 
 ### Install avrogen
 
@@ -307,7 +307,7 @@ avrogen -s <path/to/schema.avsc> <output-directory>
 Example:
 
 ```bash
-avrogen -s src/OI.Messaging.Kafka/Models/AvroSchemas/MBESReadingEvent.avsc src/OI.Messaging.Kafka/Models/
+avrogen -s src/Messaging.Kafka/Models/AvroSchemas/MBESReadingEvent.avsc src/Messaging.Kafka/Models/
 ```
 
 ---
@@ -323,11 +323,11 @@ var producerCfg   = config.GetRequiredSection("Kafka:ProducerConfig").Get<KafkaP
 var resilience    = config.GetRequiredSection("Kafka:Resilience").Get<KafkaResilienceOptions>()!;
 var consumerCfg   = config.GetRequiredSection("Kafka:ConsumerConfig").Get<KafkaConsumerConfig>()!;
 
-services.AddOIKafkaProducer(connection, producerCfg, resilience);
-services.AddOIKafkaConsumer<MyEvent, MyHandler>(connection, consumerCfg);
+services.AddKafkaProducer(connection, producerCfg, resilience);
+services.AddKafkaConsumer<MyEvent, MyHandler>(connection, consumerCfg);
 ```
 
-`AddOIKafkaProducer` registers:
+`AddKafkaProducer` registers:
 - `ISchemaRegistryClient` (singleton `CachedSchemaRegistryClient`)
 - `KafkaProducer` (inner, singleton)
 - `IKafkaProducer` → `ResilientKafkaProducer` (singleton decorator)
@@ -343,4 +343,12 @@ public class MyService(IKafkaProducer producer)
     public async Task SendRaw(byte[] payload) =>
         await producer.ProduceAsync(payload, "my-topic", new Headers());
 }
+```
+
+### Debezium Topic Routing
+
+By default, the Outbox Event Router appends a suffix like `.events` to the topic name. If you want the topic name to strictly mirror your `aggregate_type` value (e.g. `sample-events-protobuf`), you can adjust the `route.topic.replacement` property in your Debezium connector configuration:
+
+```json
+"transforms.outbox.route.topic.replacement": "${routedByValue}"
 ```

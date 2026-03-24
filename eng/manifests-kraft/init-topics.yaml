@@ -31,9 +31,7 @@ spec:
             /usr/bin/kafka-topics --bootstrap-server kafka:9092 --delete --topic $topic;
           done;
 
-          /usr/bin/kafka-topics --bootstrap-server kafka:9092 --create --topic localdev.TestTopic --partitions 1 --config cleanup.policy=compact;
-          /usr/bin/kafka-topics --bootstrap-server kafka:9092 --create --topic pdu-readings --partitions 1 --config cleanup.policy=compact;
-          /usr/bin/kafka-topics --bootstrap-server kafka:9092 --create --topic pdu-readings-avro --partitions 1 --config cleanup.policy=compact;
+          /usr/bin/kafka-topics --bootstrap-server kafka:9092 --create --topic sample-events-protobuf.events --partitions 1 --config cleanup.policy=compact;
           /usr/bin/kafka-topics --bootstrap-server kafka:9092 --create --topic debezium-connect-offsets --partitions 1 --config cleanup.policy=compact;
           /usr/bin/kafka-topics --bootstrap-server kafka:9092 --create --topic debezium-connect-statuses --partitions 1 --config cleanup.policy=compact;
           /usr/bin/kafka-topics --bootstrap-server kafka:9092 --create --topic debezium-connect-configs --partitions 1 --config cleanup.policy=compact;

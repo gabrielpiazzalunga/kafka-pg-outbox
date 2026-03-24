@@ -1,0 +1,43 @@
+syntax = "proto3";
+
+package oi.messaging.contracts;
+
+import "shared/reading_envelope.proto";
+
+option csharp_namespace = "Messaging.Contracts.Proto";
+
+// Multibeam Echosounder reading. Published on vessel.readings.mbes.
+// All payload-specific fields are optional — they may be absent when
+// envelope.connection_status is DISCONNECTED or DEGRADED.
+message MBESReading {
+  ReadingEnvelope envelope = 1;
+
+  // Primary depth sounding in metres.
+  optional double depth_m = 2;
+
+  // Across-track swath coverage in metres.
+  optional double swath_width_m = 3;
+
+  // Active operating frequency in kHz.
+  optional double frequency_khz = 4;
+
+  // Pulse length in microseconds.
+  optional double pulse_length_us = 5;
+
+  // Ping rate in Hz.
+  optional double ping_rate_hz = 6;
+
+  optional int32 beam_count = 7;
+
+  // Applied sound velocity at transducer face in m/s.
+  optional double sound_velocity_ms = 8;
+
+  // Phase stability indicator.
+  optional double phase_stability = 9;
+
+  // Pulse stability indicator.
+  optional double pulse_stability = 10;
+
+  // Transducer temperature in degrees Celsius.
+  optional double temperature_c = 11;
+}

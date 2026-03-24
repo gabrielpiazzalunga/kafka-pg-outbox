@@ -8,7 +8,7 @@ NC='\033[0m' # No Color
 # Tools required:
 #
 # C# (Grpc.Tools / MSBuild — no manual protoc call needed for C#):
-#   Add to OI.Messaging.Contracts.csproj:
+#   Add to Messaging.Contracts.csproj:
 #     <PackageReference Include="Google.Protobuf" Version="3.*" />
 #     <PackageReference Include="Grpc.Tools" Version="2.*" PrivateAssets="All" />
 #     <Protobuf Include="ProtoSchemas/**/*.proto" GrpcServices="None" />
@@ -23,7 +23,7 @@ NC='\033[0m' # No Color
 #   https://github.com/protocolbuffers/protobuf/releases
 #   (install protoc and add to PATH)
 
-protoFrom="./src/OI.Messaging.Contracts/ProtoSchemas"
+protoFrom="./src/Messaging.Contracts/ProtoSchemas"
 
 if [ ! -d "$protoFrom" ]; then
     echo -e "${RED}ERROR: ProtoSchemas directory not found: ${protoFrom}${NC}"; exit 1
@@ -42,7 +42,7 @@ echo -e "${NC}Found ${#protoFiles[@]} .proto file(s) in ${protoFrom}"
 
 # ── C# ────────────────────────────────────────────────────────────────────────
 # C# code generation is handled automatically by Grpc.Tools during dotnet build.
-# Run: dotnet build ./src/OI.Messaging.Contracts/OI.Messaging.Contracts.csproj
+# Run: dotnet build ./src/Messaging.Contracts/Messaging.Contracts.csproj
 echo -e "${GREEN}${CHECK}  C# — handled by Grpc.Tools (run: dotnet build)${NC}"
 
 # ── TypeScript ────────────────────────────────────────────────────────────────
