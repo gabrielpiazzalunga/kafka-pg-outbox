@@ -1,0 +1,22 @@
+syntax = "proto3";
+package messaging.kafka.ingestion.visa;
+option csharp_namespace = "Messaging.Contracts.Proto";
+
+message VisaSettlementReceived {
+    string file_id = 1;
+    int64 record_index = 2;
+    
+    // Core Matching Data    
+    string acquirer_reference_number = 3; // ARN
+    string authorization_code = 4;
+    string masked_pan = 5;
+    
+    // Financial Data
+    int64 transaction_amount_cents = 6;
+    int64 settlement_amount_cents = 7;
+    int64 interchange_fee_cents = 8;
+    string currency_code = 9;
+    
+    // Meta Date Info
+    string processing_date = 10;
+}

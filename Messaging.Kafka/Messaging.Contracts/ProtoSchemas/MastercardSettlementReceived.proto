@@ -1,0 +1,22 @@
+syntax = "proto3";
+package messaging.kafka.ingestion.mastercard;
+option csharp_namespace = "Messaging.Contracts.Proto";
+
+message MastercardSettlementReceived {
+    string file_id = 1;
+    int64 record_index = 2;
+    
+    // Core Matching Data    
+    string trace_id = 3; // Network reference trace ID
+    string authorization_code = 4; // DE 38
+    string masked_pan = 5; // DE 2
+    
+    // Financial Data
+    int64 transaction_amount_cents = 6; // DE 4
+    int64 settlement_amount_cents = 7; // DE 5
+    int64 combined_fee_cents = 8;
+    string currency_code = 9; // DE 49
+    
+    // Meta Date Info
+    string processing_date = 10; // DE 12 / 15
+}
