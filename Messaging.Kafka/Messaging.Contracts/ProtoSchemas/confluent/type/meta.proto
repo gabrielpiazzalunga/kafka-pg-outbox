@@ -1,0 +1,16 @@
+syntax = "proto3";
+package confluent;
+
+import "google/protobuf/descriptor.proto";
+
+message FieldMeta {
+    message Param {
+        string key = 1;
+        string value = 2;
+    }
+    repeated Param params = 1;
+}
+
+extend google.protobuf.FieldOptions {
+    FieldMeta field_meta = 50002;
+}

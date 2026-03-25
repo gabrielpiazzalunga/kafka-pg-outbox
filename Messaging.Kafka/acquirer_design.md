@@ -448,3 +448,691 @@ Being critical, here are the nastiest problems an architect must solve for Feed 
     2. **The Batcher:** Instead of pushing individual lines to a `.NET Channel` (which creates too much locking overhead), the Producer adds lines to a `List<string>`. Once the list hits exactly `10,000` lines (a logical block of work), it creates an immutable array and `WriteAsync`'s that entire array into the `Channel`.
     3. **Bounded Channels (Backpressure):** You create the channel with `BoundedChannelOptions(Capacity = 10)`. This is the most crucial part! If the 10 worker threads get slow, the Channel fills up with 10 arrays (totaling 100,000 lines). The blazing fast Producer thread is *forced to pause* and wait. This enforces **Backpressure**, mathematically guaranteeing your application will never process more than 10 blocks at the same time, keeping RAM strictly capped.
     4. **The Consumers (10 Worker Threads):** Ten parallel threads call `Channel.ReadAsync()`. A worker grabs an array of 10,000 perfect, unbroken string lines, iterates through them, parses the amounts, fires the Kafka events, sends the atomic increments to Redis, and then reaches back into the Channel for the next array.
+
+---
+
+### 7.10. Deep Dive: Outbound File Service (Clearing File Generation)
+
+When generating outgoing clearing files for networks like Visa or Mastercard, the Acquirer must select millions of `charge_captured` transactions from the Ledger Database, format them into strict legacy structures (e.g., fixed-width Base II or IPM), compute file-level totals (checksums/trailers), and transmit them. 
+
+This poses massive architectural challenges. You cannot simply `SELECT *` 20 million rows, build a 15GB string in memory, and upload it. The database will choke, and the pod will throw an OutOfMemory (OOM) exception. Furthermore, a transaction must exist in exactly *one* clearing file to avoid double-billing the cardholder.
+
+#### A. Architectural Alternatives for Outbound Generation
+
+##### Alternative 1: The Monolithic Paged Job (The Anti-Pattern)
+* **Approach:** A massive nightly cron job queries the DB using `OFFSET/LIMIT` pagination, formatting and appending to a local file stream, and updating `status = 'clearing_sent'` row-by-row.
+* **Why big players abandon this:** Relational databases degrade terribly on deep `OFFSET` pagination. Holding a long-running massive read/write transaction spikes CPU and blocks real-time authorization queries. If the job runs for 4 hours and fails at hour 3, resuming gracefully without duplicating records is a nightmare.
+
+---
+
+##### Alternative 2: Event-Sourced CDC Pipeline (The Stripe Model)
+
+Stripe's financial infrastructure is built around an **immutable, event-sourced ledger** with Apache Kafka as the financial source of truth. Rather than querying the operational database at clearing time, every state transition is streamed in real-time into a secondary read-optimized store specifically designed for batch extraction.
+
+**Core Principle:** The operational Ledger DB is *never* queried for clearing file generation. Instead, CDC feeds a downstream "Clearing Outbox" that is physically optimized for sequential reads.
+
+```mermaid
+graph TD
+    subgraph Real-Time Path
+        Auth[Auth Service]
+        Capture[Capture Service]
+        LedgerDB[(Primary Ledger DB - PostgreSQL)]
+    end
+
+    subgraph CDC Layer
+        Debezium[Debezium CDC]
+        EventBus((Kafka - Financial Event Bus))
+    end
+
+    subgraph Materialized Clearing Store
+        Router[Topic Router / Stream Processor]
+        ClearingStore[(Clearing Outbox Store)]
+        VisaPartition[Partition: visa / 2026-03-24]
+        MCPartition[Partition: mastercard / 2026-03-24]
+        BalanceView[Materialized Balance View]
+    end
+
+    subgraph Clearing File Generation
+        Extractor[Partition Extractor Job]
+        Formatter[Format Writer - Base II / IPM]
+        S3[(S3 - Final Clearing File)]
+        SFTP[Network SFTP]
+    end
+
+    %% Real-time flow
+    Auth -->|charge_authorized| LedgerDB
+    Capture -->|charge_captured| LedgerDB
+    LedgerDB -->|WAL stream| Debezium
+    Debezium -->|Publish immutable events| EventBus
+
+    %% CDC to materialized store
+    EventBus --> Router
+    Router -->|Visa captures| VisaPartition
+    Router -->|MC captures| MCPartition
+    Router -->|All events| BalanceView
+    VisaPartition --> ClearingStore
+    MCPartition --> ClearingStore
+
+    %% Clearing file extraction
+    ClearingStore -->|Sequential partition scan| Extractor
+    Extractor --> Formatter
+    Formatter -->|Stream write| S3
+    S3 -->|Transfer| SFTP
+```
+
+**How It Works Step-by-Step:**
+
+1. **During the day:** Every `charge_captured` event flows through CDC → Kafka. A stream processor (Kafka Streams or Flink) routes each event into a **partitioned Clearing Outbox store** — keyed by `(network, clearing_date)`. This store can be Cassandra (wide columns), a date-partitioned PostgreSQL table, or Apache Hive/Iceberg on S3.
+
+2. **The "hot path" separation:** The same Kafka events also feed **materialized balance views** — pre-computed aggregations that power the merchant dashboard ("Your pending balance: $4,230"). This is why Stripe processes billions of events daily through Kafka — the event bus feeds multiple downstream consumers without touching the primary Ledger.
+
+3. **At clearing time (e.g., 11 PM):** The Extractor job does *not* run a complex analytical query. It simply reads the pre-sorted `visa/2026-03-24` partition sequentially. Because the data was inserted in temporal order throughout the day, the read is essentially a sequential disk scan — the fastest possible I/O pattern. The Formatter converts each row into Visa Base II fixed-width format, streams it to S3, and computes the trailer math on the fly.
+
+**Why This Works:**
+- **Zero load on the primary Ledger DB** at clearing time — the operational database only serves real-time authorization.
+- The Clearing Outbox is a **write-optimized append-only store** — no indexes to maintain, no B-tree overhead.
+- Data is **physically co-located by network and date**, so extraction is a single sequential scan, not a scattered query.
+
+**Trade-offs:**
+- You must maintain a **secondary datastore** in sync with the primary Ledger. CDC lag introduces eventual consistency — typically 1-5 seconds, which is acceptable for batch clearing.
+- Schema evolution in the Ledger must be carefully mirrored in the Clearing Outbox.
+- **Exactly-once delivery** between Kafka and the Clearing Store must be guaranteed (Kafka Streams or Flink provide this natively via their state stores).
+
+---
+
+##### Alternative 3: Distributed Spark MapReduce (The Uber Model)
+
+Uber's settlement architecture processes **1.2 billion settlements monthly** across 50+ Payment Service Providers. At this scale, even a pre-materialized partition scan is too slow for a single machine. Uber uses **Apache Spark on a centralized data lake** (Hive/Parquet on HDFS/S3) to distribute the clearing file generation across hundreds of worker nodes.
+
+**Core Principle:** The data lake is the single source of truth for batch operations. Spark jobs read partitioned Parquet files, apply business logic in parallel, and assemble the final output using a MapReduce pattern with S3 Multipart Upload.
+
+```mermaid
+graph TD
+    subgraph Operational Layer
+        LedgerDB[(Ledger DB or LedgerStore)]
+        CDC[CDC / Kafka Connect]
+    end
+
+    subgraph Data Lake - S3/HDFS
+        Kafka((Kafka Event Bus))
+        Ingestion[Spark Ingestion Job - hourly]
+        Lake[(Data Lake - Hive/Iceberg)]
+        VisaDay["Partition: network=visa / date=2026-03-24"]
+        MCDay["Partition: network=mc / date=2026-03-24"]
+    end
+
+    subgraph Clearing Run Orchestrator
+        Scheduler[Airflow / Temporal Scheduler]
+        RunDB[(Clearing Runs DB)]
+    end
+
+    subgraph Spark Cluster
+        Driver[Spark Driver - Master]
+        W1[Executor 1 - Chunk 1..200K]
+        W2[Executor 2 - Chunk 200K..400K]
+        W3[Executor 3 - Chunk 400K..600K]
+        WN["Executor N - Chunk ..."]
+    end
+
+    subgraph S3 Assembly
+        MPU[S3 Multipart Upload]
+        Part1[Part 1 - Executor 1]
+        Part2[Part 2 - Executor 2]
+        Part3[Part 3 - Executor 3]
+        PartN["Part N"]
+        Trailer[Trailer - Driver]
+        FinalFile[(Final Clearing File - 15GB)]
+    end
+
+    subgraph Delivery
+        SFTP[Card Network SFTP]
+    end
+
+    %% Data flow into lake
+    LedgerDB -->|WAL| CDC
+    CDC --> Kafka
+    Kafka --> Ingestion
+    Ingestion -->|Write Parquet partitioned by network+date| Lake
+    Lake --- VisaDay
+    Lake --- MCDay
+
+    %% Orchestration
+    Scheduler -->|"Trigger: 11 PM cutoff"| Driver
+    Scheduler -->|Insert clearing_run + lock rows| RunDB
+
+    %% Spark MapReduce
+    VisaDay -->|Read partition| Driver
+    Driver -->|Assign chunk ranges| W1
+    Driver -->|Assign chunk ranges| W2
+    Driver -->|Assign chunk ranges| W3
+    Driver -->|Assign chunk ranges| WN
+
+    %% Workers produce parts
+    W1 -->|Format + Upload Part| Part1
+    W2 -->|Format + Upload Part| Part2
+    W3 -->|Format + Upload Part| Part3
+    WN -->|Format + Upload Part| PartN
+
+    Part1 --> MPU
+    Part2 --> MPU
+    Part3 --> MPU
+    PartN --> MPU
+
+    %% Reduce
+    W1 -.->|Return chunk_sum, chunk_count| Driver
+    W2 -.->|Return chunk_sum, chunk_count| Driver
+    W3 -.->|Return chunk_sum, chunk_count| Driver
+    WN -.->|Return chunk_sum, chunk_count| Driver
+    Driver -->|Compute total, generate trailer| Trailer
+    Trailer --> MPU
+    MPU -->|CompleteMultipartUpload| FinalFile
+    FinalFile -->|Transfer| SFTP
+    Driver -->|Update run: COMPLETED| RunDB
+```
+
+**How It Works Step-by-Step:**
+
+1. **Continuous ingestion into the Data Lake:** Throughout the day, a Spark Streaming or hourly batch job reads `charge_captured` events from Kafka and writes them as **Parquet files** into a Hive/Iceberg table, partitioned by `(network, clearing_date)`. Parquet is columnar and compressed — 20 million rows that would be 15GB as text occupy ~2-3GB as Parquet.
+
+2. **The Orchestrator triggers the run:** At 11:00 PM, an Airflow or Temporal DAG fires. It creates a `clearing_run` record in the Runs DB and tells Spark: *"Generate the Visa clearing file for 2026-03-24."*
+
+3. **The Map Phase (Distributed Formatting):**
+   - The Spark Driver reads the metadata of the `visa/2026-03-24` partition — it knows there are N Parquet files totaling 20 million rows.
+   - It divides the work into chunks (e.g., 100 chunks of 200,000 rows each).
+   - Each Spark Executor reads its chunk of Parquet data, converts each row into Visa Base II fixed-width format, and uploads the formatted text as an **S3 Multipart Upload Part**.
+   - Each Executor returns its `(chunk_record_count, chunk_total_amount)` to the Driver.
+
+4. **The Reduce Phase (Trailer Generation):**
+   - The Driver aggregates all chunk totals: `total_records = SUM(chunk_counts)`, `total_amount = SUM(chunk_amounts)`.
+   - It generates the file Header (with metadata) and Trailer (with totals).
+   - It uploads the Header as Part 0 and the Trailer as the final Part.
+   - It calls `CompleteMultipartUpload` — S3 stitches all parts into a single 15GB object in milliseconds.
+
+5. **Delivery:** The final S3 object is transferred to the card network's SFTP server. The clearing run is marked `COMPLETED`.
+
+**Why This Works at Scale:**
+- **Horizontal parallelism:** 100 Spark Executors process 200,000 rows each in parallel. A single node taking 2 hours finishes in ~72 seconds with 100 nodes.
+- **No memory pressure:** Each Executor only holds ~200,000 rows × ~100 bytes = ~20MB in memory. The 15GB file is never held by any single machine.
+- **S3 Multipart Upload** eliminates the "assemble on disk" problem. No machine ever needs 15GB of local disk.
+- **Fault tolerance:** If Executor 42 crashes, Spark retries just that chunk. The other 99 chunks are already uploaded to S3.
+
+**Trade-offs:**
+- **Infrastructure cost:** Running a Spark cluster (even serverless Spark on EMR/Glue) adds significant operational and compute cost.
+- **Latency:** The Data Lake ingestion introduces a delay (minutes to an hour). This is acceptable for batch clearing but means the data is not "live."
+- **Sequence number assignment:** The Driver must pre-assign global sequence number ranges to each Executor (e.g., Executor 1 gets lines 1-200,000, Executor 2 gets 200,001-400,000). This is straightforward because the Driver knows the total row count before dispatching.
+
+---
+
+#### The Soft Cutoff Strategy (Absorbing CDC Latency)
+
+Your intuition about setting the business cutoff *before* the actual network cutoff is exactly how the industry handles CDC latency. This is called a **"Soft Cutoff"** or **"Internal Cutoff Window."**
+
+```
+Network Hard Cutoff: 4:00 PM EST (Visa's deadline)
+                     ▲
+                     │
+    ┌────────────────┤
+    │  Buffer Zone   │  ← 30 min safety margin
+    │  (CDC drain +  │
+    │   processing)  │
+    └────────────────┤
+                     │
+Internal Soft Cutoff: 3:30 PM EST (Your system's cutoff)
+                     ▲
+                     │
+    All merchants must capture by this time to be included
+    in today's clearing file. Anything after → tomorrow.
+```
+
+**How it works in practice:**
+
+1. **3:30 PM EST (Soft Cutoff):** Your system stops accepting new `charge_captured` events into today's clearing run. The SQL equivalent is:
+   ```sql
+   UPDATE ledger SET clearing_run_id = 999
+   WHERE status = 'captured'
+     AND clearing_run_id IS NULL
+     AND captured_at < '2026-03-24T19:30:00Z'  -- 3:30 PM EST in UTC
+   ```
+
+2. **3:30 - 3:45 PM (CDC Drain Window):** Even though the soft cutoff has passed, Debezium is still processing WAL events from transactions captured at 3:29:59 PM. The system waits 15 minutes for all CDC events to propagate through Kafka and arrive in the data lake or clearing store. This absorbs:
+   - Debezium WAL polling latency (~100-500ms)
+   - Kafka produce + consumer lag (~1-5 seconds)
+   - Spark ingestion job latency (minutes, if hourly)
+
+3. **3:45 PM (Spark Job Triggers):** The MapReduce clearing file generation begins. It now has 15 minutes to:
+   - Read the pre-materialized partition
+   - Distribute work across Executors
+   - Upload all parts to S3
+   - Compute the trailer and finalize
+
+4. **4:00 PM (Network Hard Cutoff):** The assembled file is transferred to Visa's SFTP. You had a 30-minute buffer to absorb all latency.
+
+**What about the "gap" transactions?** Transactions captured between the soft cutoff and the hard cutoff simply go into **tomorrow's clearing run**. The merchant gets paid one day later for those specific transactions. This is universally accepted in the industry — merchants understand that "same-day" clearing has a cutoff, just like banks have wire transfer cutoff times.
+
+**Is it feasible?** Absolutely — this is standard practice:
+- Visa's actual hard cutoff varies by region but is typically a fixed daily time.
+- Every major acquirer (Adyen, Worldpay, FIS) runs their internal cutoff 15-60 minutes before the network deadline.
+
+> [!IMPORTANT]
+> **Corrected Soft Cutoff Timing — Ingestion Frequency Matters**
+> 
+> The soft cutoff buffer is driven by the **worst-case CDC-to-lake latency**, which is dominated by how frequently the Spark ingestion job runs:
+
+```
+Worst case with hourly batch ingestion:
+
+Transaction captured at 2:01 PM
+  → CDC event arrives in Kafka at 2:01:03 PM     (~3 sec Debezium + Kafka)
+  → Next Spark batch runs at 3:00 PM              (worst case: 59 min wait)
+  → Spark writes Parquet at 3:05 PM               (~5 min batch processing)
+  → Data is queryable in lake at 3:05 PM
+
+Total worst-case latency: ~64 minutes
++ Spark MapReduce processing time: ~10 minutes
++ Safety margin: ~5 minutes
+= Required soft cutoff buffer: ~80 minutes
+```
+
+| Ingestion Frequency | Worst-Case CDC-to-Lake Lag | Required Soft Cutoff Buffer | If Hard Cutoff = 4:00 PM EST |
+|---------------------|----------------------------|----------------------------|-------------------------------|
+| **Hourly batch** | ~64 min | **~80 min** | Soft cutoff at **2:40 PM** |
+| **Every 15 min** | ~19 min | **~35 min** | Soft cutoff at **3:25 PM** |
+| **Every 5 min** (micro-batch) | ~9 min | **~25 min** | Soft cutoff at **3:35 PM** |
+| **Continuous streaming** | ~5 sec | **~15 min** | Soft cutoff at **3:45 PM** |
+
+**Recommendation:** A **15-minute ingestion cycle** is the practical sweet spot. It's simple to operate (a scheduled Spark batch, not a continuously running streaming job), and it allows a soft cutoff of ~3:25 PM — only 35 minutes of gap transactions for the merchant.
+
+---
+
+#### The Clearing Orchestrator — Deep Dive
+
+The orchestrator is the **control plane** of the clearing pipeline. It doesn't process any financial data itself — it coordinates the multi-step state machine: lock rows → wait for drain → validate → trigger Spark → verify → deliver → update state.
+
+##### Can It Be a Regular .NET/Python Service?
+
+**Yes — and that's often the right choice.** The orchestrator does not need to be a heavyweight workflow engine. Here's the spectrum:
+
+| Approach | Technology | Best When |
+|----------|-----------|-----------|
+| **A. Regular .NET/Python service** | A `BackgroundService` (C#) or `APScheduler` (Python) with a state machine in PostgreSQL | You have 1-3 clearing pipelines (e.g., Visa + Mastercard). Simple, your team already knows .NET. |
+| **B. Temporal** | Temporal workflows in Go/Python/Java | You need durable execution, human approval gates, complex retry logic across many (10+) pipelines. |
+| **C. Apache Airflow** | Python DAGs | Your data engineering team already has Airflow for other ETL. Clearing becomes "just another DAG." |
+
+> [!NOTE]
+> **For a top 5 bank in Brazil, I'd recommend starting with option A (a .NET service)** and graduating to Temporal/Airflow only when orchestration complexity exceeds what a simple state machine can handle. Here's why:
+
+**A regular .NET service connecting to Spark works like this:**
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Cron as Kubernetes CronJob
+    participant Svc as ClearingOrchestrator.Service (.NET)
+    participant DB as Clearing Runs DB (PostgreSQL)
+    participant Ledger as Ledger DB
+    participant Lake as Data Lake (Iceberg / S3)
+    participant Spark as Spark Cluster (EMR / Databricks)
+    participant S3 as S3 (Final File)
+    participant SFTP as Card Network SFTP
+
+    Note over Cron,Svc: Triggered daily at soft cutoff (e.g. 3:25 PM EST)
+    Cron->>Svc: Start ClearingOrchestrator
+
+    %% Step 1: Lock
+    Svc->>DB: INSERT clearing_run (id=999, status=LOCKING, cutoff=3:25PM)
+    Svc->>Ledger: UPDATE ledger SET clearing_run_id=999 WHERE captured_at < cutoff AND run_id IS NULL
+    Ledger-->>Svc: 18,432,991 rows locked
+    Svc->>DB: UPDATE clearing_run SET status=DRAINING, expected_count=18432991
+
+    %% Step 2: Drain
+    Note over Svc: Sleep 15 minutes (configurable drain window)
+    Svc->>Svc: await Task.Delay(drainWindow)
+
+    %% Step 3: Validate
+    Svc->>Lake: SELECT COUNT(*) FROM iceberg WHERE date=today AND network='visa'
+    Lake-->>Svc: 18,432,991 rows in lake
+    Note over Svc: lake_count >= expected_count? ✅ Proceed
+
+    %% Step 4: Submit Spark
+    Svc->>Spark: POST /api/v1/submissions (spark-submit via REST API)
+    Note right of Spark: Spark reads Iceberg partition, MapReduce → S3 Multipart
+    Spark-->>Svc: Application ID: app-20260324-001
+
+    %% Step 5: Monitor
+    loop Poll every 30s
+        Svc->>Spark: GET /api/v1/applications/app-20260324-001/status
+        Spark-->>Svc: RUNNING...
+    end
+    Spark-->>Svc: COMPLETED (trailer: count=18432991, amount=$2.8B)
+
+    %% Step 6: Verify
+    Svc->>DB: SELECT expected_count FROM clearing_run WHERE id=999
+    Note over Svc: Spark trailer count == expected_count? ✅
+
+    %% Step 7: Deliver
+    Svc->>S3: Get presigned URL for final clearing file
+    Svc->>SFTP: Upload file via SSH.NET / Renci
+    SFTP-->>Svc: Transfer confirmed
+
+    %% Step 8: Complete
+    Svc->>DB: UPDATE clearing_run SET status=COMPLETED
+    Note over Svc: CDC will async transition ledger rows to clearing_sent
+```
+
+**How the .NET service talks to Spark:**
+- **Option 1: REST API** — Spark clusters (EMR, Databricks, standalone) expose a REST API for job submission. Your .NET service sends a `POST` with the JAR path + arguments and polls for completion.
+- **Option 2: AWS SDK** — If using EMR, use the `Amazon.ElasticMapReduce` SDK to call `AddJobFlowSteps`. For AWS Glue, use `StartJobRun`.
+- **Option 3: Databricks SDK** — Databricks has a .NET/Python SDK for submitting and monitoring jobs.
+- **Option 4: CLI wrapper** — The simplest: your .NET service shells out to `spark-submit` via `Process.Start()` and reads stdout. Not elegant, but works for a first version.
+
+**What the .NET service is responsible for:**
+1. **State machine management** — Tracking the clearing run through `LOCKING → DRAINING → VALIDATING → GENERATING → VERIFYING → DELIVERING → COMPLETED`
+2. **Retry logic** — If Spark fails, the service can retry the job (the lake data is immutable, so retries are safe). If SFTP fails, retry the upload.
+3. **Alerting** — If any step fails after N retries, fire a PagerDuty/Slack alert for operations.
+4. **Idempotency** — If the service itself crashes and restarts, it reads the `clearing_run` state from PostgreSQL and resumes from the last completed step.
+
+**When to graduate to Temporal/Airflow:**
+- When you have **10+ clearing pipelines** (Visa, Mastercard, Elo, Hipercard, PIX, multiple Registradoras) and the state machine code becomes unmanageable.
+- When you need **human approval gates** (e.g., a compliance officer must approve the file before SFTP transfer).
+- When you need **cross-pipeline dependencies** (e.g., "don't submit the Registradora file until Visa clearing is confirmed").
+
+##### The Orchestrator State Machine
+
+```mermaid
+stateDiagram-v2
+    [*] --> LOCKING : CronJob triggers at soft cutoff
+    LOCKING --> DRAINING : Rows locked successfully
+    LOCKING --> FAILED : Lock query timeout / DB error
+
+    DRAINING --> VALIDATING : Drain window elapsed
+    
+    VALIDATING --> GENERATING : lake_count >= expected_count
+    VALIDATING --> DRAINING : lake_count < expected (extend drain, max 2 retries)
+    VALIDATING --> FAILED : Max drain retries exceeded
+
+    GENERATING --> VERIFYING : Spark job COMPLETED
+    GENERATING --> GENERATING : Spark job FAILED (retry, max 3 attempts)
+    GENERATING --> FAILED : Max Spark retries exceeded
+
+    VERIFYING --> DELIVERING : Trailer math matches expected
+    VERIFYING --> FAILED : Trailer mismatch (CRITICAL — alert ops)
+
+    DELIVERING --> COMPLETED : SFTP transfer confirmed
+    DELIVERING --> DELIVERING : SFTP failed (retry, max 3 attempts)
+    DELIVERING --> FAILED : Max SFTP retries exceeded
+
+    FAILED --> [*] : Ops investigates, manually resolves
+    COMPLETED --> [*] : CDC transitions ledger rows to clearing_sent
+```
+
+---
+
+#### Your Hybrid Approach: CDC → Kafka → Spark (The Convergence)
+
+Based on our discussion, your ideal architecture converges the Stripe and Uber models:
+
+```mermaid
+graph TD
+    subgraph Operational System
+        LedgerDB[(Ledger DB)]
+        Debezium[Debezium CDC]
+    end
+
+    subgraph Streaming Layer
+        Kafka((Kafka - charge_captured topic))
+        SparkStreaming["Spark Streaming / Flink - Continuous Ingestion"]
+    end
+
+    subgraph Data Lake - S3
+        Lake[(Iceberg / Delta Lake)]
+        Partition["Partition: network=visa / date=2026-03-24"]
+    end
+
+    subgraph Orchestrator
+        RunDB[(Clearing Runs DB)]
+        Scheduler["Scheduler (Airflow/Temporal)"]
+        SoftCutoff["3:30 PM - Soft Cutoff Trigger"]
+        DrainWait["3:45 PM - Drain Complete Check"]
+    end
+
+    subgraph Spark Batch Cluster - Triggered at 3:45 PM
+        Driver[Spark Driver]
+        E1["Executor 1 → Part 1"]
+        E2["Executor 2 → Part 2"]
+        EN["Executor N → Part N"]
+    end
+
+    subgraph S3 Output
+        MPU[S3 Multipart Upload]
+        Final[(Final Clearing File)]
+    end
+
+    subgraph Delivery
+        SFTP[Card Network SFTP - 4:00 PM deadline]
+    end
+
+    %% CDC flow
+    LedgerDB -->|WAL| Debezium
+    Debezium --> Kafka
+
+    %% Continuous lake ingestion
+    Kafka --> SparkStreaming
+    SparkStreaming -->|"Write Parquet (micro-batch every 5 min)"| Partition
+    Partition --> Lake
+
+    %% Orchestration
+    SoftCutoff -->|"Lock: UPDATE ledger SET run_id=999 WHERE captured_at < cutoff"| RunDB
+    SoftCutoff --> DrainWait
+    DrainWait -->|"15 min drain for CDC latency"| Driver
+
+    %% Spark MapReduce
+    Lake -->|Read partition| Driver
+    Driver --> E1
+    Driver --> E2
+    Driver --> EN
+    E1 --> MPU
+    E2 --> MPU
+    EN --> MPU
+    Driver -->|"Trailer: SUM(chunk_totals)"| MPU
+    MPU -->|CompleteMultipartUpload| Final
+    Final -->|Transfer before 4 PM| SFTP
+```
+
+**This gives you:**
+1. **Stripe's CDC materialization** — data flows continuously into a pre-sorted data lake via Kafka + Spark Streaming. No thundering-herd query at clearing time.
+2. **Uber's MapReduce** — at clearing time, a Spark batch job distributes the file formatting across N executors, each uploading a part to S3. The Driver computes the trailer from chunk totals.
+3. **The soft cutoff** — your internal cutoff (3:30 PM) gives a 30-minute buffer before Visa's hard deadline (4:00 PM). The drain window (15 min) absorbs CDC pipeline latency.
+4. **The Run Lock** — the `clearing_run_id` is stamped on ledger rows at the soft cutoff, guaranteeing exactly-once inclusion. If the Spark job fails, you null out the run_id and retry.
+
+**The sequence number problem is naturally solved:** Because the Spark Driver knows the total row count from the partition metadata *before* dispatching, it pre-assigns global sequence number ranges to each Executor. Executor 1 gets lines 1-200,000, Executor 2 gets 200,001-400,000. No Redis serialization point needed — the Driver is the single coordinator.
+
+#### B. The State Update Strategy (Pessimistic Locking vs. Run Locking)
+Regardless of the distributed approach, how do you safely mark those 20 million rows as `clearing_sent` without brutal database locks?
+* **Pessimistic Row-Locking:** Slow and dangerous at high volume.
+* **The "Run ID" Staging Pattern (Best Practice):** 
+    1. Create a `Clearing_Runs (id, status, total_amount)` table.
+    2. Insert a new run: `INSERT INTO Clearing_Runs VALUES (999, 'BUILDING', 0)`.
+    3. Perform a massive bulk pseudo-lock: `UPDATE ledger SET clearing_run_id = 999 WHERE status = 'captured' AND clearing_run_id IS NULL`. This immediately "locks" the transactions to this specific file run using a simple foreign key. Relational DBs can update millions of rows in seconds.
+    4. The file generation workers now query `WHERE clearing_run_id = 999`. 
+    5. If the file generation succeeds and is sent to Visa, the run is updated to `'COMPLETED'` and a CDC event asynchronously transitions the underlying ledger rows to `clearing_sent`.
+    6. If the file generation fails catastrophically, you simply set `run_id = 999` back to null, unlocking them for the next attempt. This guarantees exactly-once inclusion.
+
+#### C. Proposed Hybrid: CDC → Kafka → Continuous S3 Materialization
+
+A fourth approach combines CDC event streaming with continuous, incremental file building throughout the day. Instead of a massive batch job at 11 PM, the clearing file is *already assembled* when the cutoff arrives.
+
+##### The Core Idea
+1. **CDC streams** every `charge_captured` event from the Ledger into a Kafka topic in real-time (via Debezium).
+2. **A pool of Kafka consumers** reads these events throughout the day. Each consumer writes its consumed records as formatted text into **parts** of an S3 Multipart Upload.
+3. **A datetime cursor** acts as the logical "run lock" — every event with `captured_at < cutoff_timestamp` belongs to today's file; everything after belongs to tomorrow's.
+4. **At cutoff time**, the file is essentially pre-built. A finalizer job computes the trailer, uploads it as the last part, and calls `CompleteMultipartUpload`.
+
+##### Architecture Diagram
+
+```mermaid
+graph TD
+    subgraph Core Ledger
+        LedgerDB[(Ledger DB)]
+        CDC[Debezium CDC]
+    end
+
+    subgraph Kafka
+        Topic((charge_captured topic))
+    end
+
+    subgraph Clearing File Builder - Consumer Group
+        C1[Consumer 1 - Partition 0,1]
+        C2[Consumer 2 - Partition 2,3]
+        C3[Consumer 3 - Partition 4,5]
+    end
+
+    subgraph AWS S3
+        MPU[Multipart Upload - clearing_2026-03-24]
+        Part1[Part 1 - from C1]
+        Part2[Part 2 - from C1]
+        Part3[Part 3 - from C2]
+        Part4[Part 4 - from C3]
+        Trailer[Trailer Part - Finalizer]
+    end
+
+    subgraph Coordination
+        Redis[(Redis - running totals + part registry)]
+        MetaDB[(Clearing Runs DB - run state)]
+        Finalizer[Finalizer Job - triggered at cutoff]
+    end
+
+    subgraph Network
+        Visa[Card Network SFTP]
+    end
+
+    %% Flow
+    LedgerDB -->|WAL stream| CDC
+    CDC -->|Publish events| Topic
+    Topic --> C1
+    Topic --> C2
+    Topic --> C3
+
+    C1 -->|Upload Part when buffer full| MPU
+    C2 -->|Upload Part when buffer full| MPU
+    C3 -->|Upload Part when buffer full| MPU
+
+    C1 -->|INCR record_count, INCRBYFLOAT total_amount| Redis
+    C2 -->|INCR record_count, INCRBYFLOAT total_amount| Redis
+    C3 -->|INCR record_count, INCRBYFLOAT total_amount| Redis
+
+    MPU --- Part1
+    MPU --- Part2
+    MPU --- Part3
+    MPU --- Part4
+
+    Finalizer -->|Read final totals from Redis| Redis
+    Finalizer -->|Generate & upload Trailer| Trailer
+    Finalizer -->|CompleteMultipartUpload| MPU
+    Finalizer -->|Update run status: COMPLETED| MetaDB
+    MPU -->|Transfer assembled file| Visa
+```
+
+##### Detailed Flow
+
+```
+Timeline of a single clearing day:
+
+00:00 UTC  ─── Finalizer creates new Clearing Run (run_id=999, cutoff=23:59:59)
+             └── Initiates S3 Multipart Upload → gets upload_id
+             └── Stores {upload_id, run_id} in Clearing Runs DB
+             └── Resets Redis counters: record_count=0, total_amount=0
+
+00:01-23:59 ─── Throughout the day:
+             ├── Merchant captures transaction → Ledger writes charge_captured
+             ├── Debezium CDC publishes event to Kafka
+             ├── Consumer reads event, checks: captured_at < cutoff?
+             │   ├── YES → Format as fixed-width text, buffer in memory
+             │   │         When buffer reaches 50,000 lines:
+             │   │           1. Upload buffer as S3 Part (UploadPart)
+             │   │           2. Redis INCR record_count by 50,000
+             │   │           3. Redis INCRBYFLOAT total_amount by sum
+             │   │           4. Commit Kafka offset
+             │   └── NO  → Skip (belongs to tomorrow's run)
+             │
+23:59:59 ──── CUTOFF
+             ├── Consumers flush any remaining buffered lines as final parts
+             ├── Consumers signal "drain complete" (e.g. Redis SET consumer:1:done = true)
+             │
+00:00+1 ───── Finalizer job activates:
+             ├── Waits until all consumers report drain complete
+             ├── Reads Redis: record_count=18,432,991, total_amount=$2,847,129,403.12
+             ├── Generates Header + Trailer rows with these totals
+             ├── Uploads Header as Part 0, Trailer as final Part
+             ├── Calls CompleteMultipartUpload (S3 stitches all parts)
+             ├── Updates Clearing Run → COMPLETED
+             └── Transfers file to Visa SFTP
+```
+
+##### Critical Engineering Questions
+
+> [!CAUTION]
+> **Q1: Part Ordering — How do you guarantee the file is valid?**
+
+Visa/Mastercard clearing files require sequential record numbers (e.g., `RECORD 0000001`, `RECORD 0000002`, ...). But if Consumer 1 uploads Part A with 50,000 records, and Consumer 2 uploads Part B with 50,000 records, the records inside Part A are numbered 1-50,000 and Part B is *also* numbered 1-50,000. When S3 stitches them, the sequence is broken.
+
+**Possible solutions:**
+- **Option A (Post-process):** Don't embed sequence numbers during the day. After `CompleteMultipartUpload`, a lightweight streaming job reads the S3 file sequentially, adds line numbers, and writes a new file. This defeats the purpose of pre-building.
+- **Option B (Redis global counter):** Each consumer calls `Redis INCRBY record_count 50000` *before* formatting. Redis returns the new value (e.g., 350,000). The consumer knows its block occupies lines 300,001-350,000 and numbers them accordingly. This works but creates a serialization point — Redis must be the single source of truth for ordering.
+- **Option C (Skip line numbers, use logical keys):** If the network format allows it, use unique transaction IDs instead of sequential line numbers. Not all networks support this.
+
+> [!CAUTION]
+> **Q2: The Cutoff Race Condition — CDC Latency**
+
+Debezium has inherent latency (WAL polling interval + Kafka produce + consumer lag). If a merchant captures a transaction at 23:59:58 and your cutoff is 23:59:59, the CDC event might arrive in the Kafka consumer at 00:00:03 — *after* the cutoff.
+
+**The dilemma:** Do you use `captured_at` from the DB row (the business timestamp) or the Kafka event timestamp (the arrival time)?
+- If you use `captured_at`: ✅ Correct, but the consumer must hold its "drain" window open for N seconds after cutoff to catch late CDC events. How long is long enough? 5 seconds? 30 seconds? This becomes a tunable SLA.
+- If you use Kafka timestamp: ❌ A transaction captured at 23:59:58 that arrives at 00:00:03 gets assigned to *tomorrow's* file. The merchant doesn't get paid today.
+
+> [!WARNING]
+> **Q3: Consumer Crash Mid-Day — Duplicate Parts in S3**
+
+Consider: Consumer 2 buffers 50,000 lines, uploads Part 7 to S3, then crashes *before* committing its Kafka offset. On restart (or rebalance), a new consumer re-reads those same 50,000 events from Kafka, formats them, and uploads them as Part 12. Now the final file contains 50,000 duplicate transactions. You've double-billed 50,000 cardholders.
+
+**Possible mitigations:**
+- **Exactly-once Kafka semantics** (`enable.idempotence=true` + transactional producer) to ensure offset commits are atomic with the "processed" marker. But you're not producing to Kafka — you're uploading to S3, so Kafka transactions don't help here.
+- **Dedup at finalization:** Before calling `CompleteMultipartUpload`, the Finalizer downloads all parts, deduplicates by transaction ID, and re-uploads a clean file. This is expensive and defeats the "pre-built" benefit.
+- **Idempotent part uploads:** Each consumer names its part deterministically based on the Kafka offset range it consumed (e.g., `part_p2_offset_150000_200000`). If it crashes and re-uploads, it overwrites the same part key. S3 Multipart doesn't natively support this — you'd need a side-channel registry in Redis mapping offset ranges to part numbers.
+
+> [!WARNING]
+> **Q4: S3 Multipart Upload Lifetime & Cost**
+
+An S3 Multipart Upload has no hard expiry, but **incomplete multipart uploads are billed for storage** of every uploaded part. If the Finalizer never calls `CompleteMultipartUpload` (e.g., a bug, infra outage), you accumulate orphaned parts. AWS recommends setting an S3 Lifecycle Rule to auto-abort incomplete multipart uploads after N days.
+
+Also: a Multipart Upload can have at most **10,000 parts**, and each part must be at least **5 MB** (except the last). If your consumers flush too frequently (e.g., every 1,000 lines = ~100KB), you'll hit the minimum part size constraint. You need to buffer at least ~50,000 lines per part to safely exceed 5MB.
+
+> [!IMPORTANT]
+> **Q5: Rebalancing Kafka Consumers Mid-Day**
+
+If a consumer pod dies or Kubernetes reschedules it, a Kafka consumer group **rebalance** occurs. Partitions are reassigned. The new consumer for partition 3 must know:
+- Which S3 Multipart Upload ID to append to
+- What the current part number is
+- Where the Redis counters stand
+
+All of this coordination state must live outside the consumer's memory (in Redis or the Clearing Runs DB). This is solvable but adds significant operational complexity.
+
+> [!NOTE]
+> **Q6: The Datetime Cursor as Run Lock — Edge Cases**
+
+Using `captured_at < cutoff_timestamp` as the run lock is elegant but has subtleties:
+- **Timezone hell:** If your Ledger stores `captured_at` in UTC but the network cutoff is defined as "4:00 PM EST," you must be extremely precise about the conversion. A 1-second error at the boundary means transactions land in the wrong file.
+- **Clock skew:** If Ledger DB replicas have slightly different clocks (common in distributed PG setups), two replicas might disagree on whether a transaction is "before" or "after" the cutoff.
+- **Amendment/correction:** What if a merchant voids a transaction at 3:00 PM that was already written to today's clearing file at 1:00 PM? The void event arrives via CDC, but the original record is already baked into Part 5 of the S3 file. You'd need an "adjustment record" mechanism in the clearing format, or a post-processing step.
+
+##### Verdict: It's a Strong Architecture With Solvable Problems
+
+The continuous materialization approach is genuinely better than a big-bang nightly batch. The key advantages are:
+1. **Near-zero cutoff latency** — the file is 99.9% built when the window closes.
+2. **No thundering-herd DB query** at 11 PM — the load is spread across the entire day.
+3. **Natural horizontal scaling** — more Kafka consumer pods = more write throughput.
+
+The hardest problems to solve (in priority order) are:
+1. **Q3 (Duplicate parts on crash)** — this is the most dangerous for financial correctness. The idempotent part naming + Redis offset registry is the cleanest solution.
+2. **Q1 (Sequence numbering)** — the Redis global counter approach (Option B) works well if you accept Redis as a serialization point.
+3. **Q2 (CDC latency at cutoff)** — a configurable drain window (e.g., 30 seconds after cutoff) with a hard deadline is standard practice.
+4. **Q6 (Amendments)** — most networks support adjustment/reversal records in clearing files, so this is a format concern, not an architectural one.

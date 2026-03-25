@@ -7,9 +7,17 @@ resources:
   - init-topics.yaml
   - control-center.yaml
   - postgres.yaml
+  - minio.yaml
+  - redis.yaml
+  - spark-ingestion.yaml
   - init-debezium-connector.yaml
+  - init-feed-ingestion-connector.yaml
+  - init-clearing-connector.yaml
   - kafkaconnector.yaml
   - configmapdebezium.yaml
+  - configmap-feed-ingestion-debezium.yaml
+  - configmap-clearing-debezium.yaml
+  - configmap-postgres-init.yaml
   - configmapkafka.yaml
   - secretspg.yaml
   - secretskafka.yaml

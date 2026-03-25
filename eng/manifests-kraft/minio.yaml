@@ -1,0 +1,132 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: minio
+  namespace: default
+  labels:
+    app: minio
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: minio
+  template:
+    metadata:
+      labels:
+        app: minio
+    spec:
+      containers:
+        - name: minio
+          image: minio/minio:RELEASE.2024-11-07T00-52-20Z
+          args:
+            - server
+            - /data
+            - --console-address
+            - ":9001"
+          ports:
+            - name: api
+              containerPort: 9000
+            - name: console
+              containerPort: 9001
+          env:
+            - name: MINIO_ROOT_USER
+              value: "minioadmin"
+            - name: MINIO_ROOT_PASSWORD
+              value: "minioadmin"
+            # Disable disk usage scanner to reduce CPU noise in local dev
+            - name: MINIO_SCANNER_SPEED
+              value: "slowest"
+          readinessProbe:
+            httpGet:
+              path: /minio/health/ready
+              port: 9000
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /minio/health/live
+              port: 9000
+            initialDelaySeconds: 20
+            periodSeconds: 30
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          emptyDir: {}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: minio
+  namespace: default
+  labels:
+    app: minio
+spec:
+  selector:
+    app: minio
+  ports:
+    - name: api
+      port: 9000
+      targetPort: 9000
+    - name: console
+      port: 9001
+      targetPort: 9001
+  type: LoadBalancer
+
+---
+# Init job: creates the clearing-lake bucket on first deploy
+# Runs mc (MinIO client) and exits — idempotent (ignores AlreadyExists)
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: minio-init-buckets
+  namespace: default
+spec:
+  ttlSecondsAfterFinished: 300
+  backoffLimit: 5
+  template:
+    spec:
+      restartPolicy: OnFailure
+      initContainers:
+        - name: wait-for-minio
+          image: curlimages/curl:8.7.1
+          command:
+            - sh
+            - -c
+            - |
+              until curl -sf http://minio:9000/minio/health/ready; do
+                echo "Waiting for MinIO..."
+                sleep 3
+              done
+              echo "MinIO is ready."
+      containers:
+        - name: create-buckets
+          image: minio/mc:RELEASE.2024-11-17T19-35-25Z
+          command:
+            - sh
+            - -c
+            - |
+              mc alias set local http://minio:9000 minioadmin minioadmin
+
+              # Clearing data lake — Spark writes Parquet here
+              mc mb --ignore-existing local/clearing-lake
+
+              # Clearing output files — finalized Base II / IPM files
+              mc mb --ignore-existing local/clearing-output
+
+              # Spark JARs — ingestion + MapReduce job JARs uploaded here
+              mc mb --ignore-existing local/spark-jars
+
+              echo "Buckets created:"
+              mc ls local

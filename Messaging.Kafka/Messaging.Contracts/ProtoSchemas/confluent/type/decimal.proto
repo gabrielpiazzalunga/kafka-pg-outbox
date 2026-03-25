@@ -1,0 +1,8 @@
+syntax = "proto3";
+package confluent.type;
+
+message Decimal {
+    bytes value = 1;
+    uint32 precision = 2;
+    int32 scale = 3;
+}

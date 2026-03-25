@@ -1,0 +1,47 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: clearing-connector-config
+  namespace: default
+data:
+  connector.json: |
+    {
+      "name": "clearing-ledger-connector",
+      "config": {
+        "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
+        "database.hostname": "postgres",
+        "database.port": "5432",
+        "database.user": "postgres",
+        "database.password": "postgres",
+        "database.dbname": "ledger",
+        "topic.prefix": "ledger",
+        "slot.name": "debezium_clearing_slot",
+        "publication.name": "debezium_clearing_pub",
+        "plugin.name": "pgoutput",
+        "table.include.list": "public.journal_entries",
+        "snapshot.mode": "never",
+        "tombstones.on.delete": "false",
+        "heartbeat.interval.ms": "5000",
+        "predicates": "isHeartbeat",
+        "predicates.isHeartbeat.type": "org.apache.kafka.connect.transforms.predicates.TopicNameMatches",
+        "predicates.isHeartbeat.pattern": "__debezium-heartbeat.*",
+        "transforms": "dropHeartbeats,unwrap,route",
+        "transforms.dropHeartbeats.type": "org.apache.kafka.connect.transforms.Filter",
+        "transforms.dropHeartbeats.predicate": "isHeartbeat",
+        "transforms.unwrap.type": "io.debezium.transforms.ExtractNewRecordState",
+        "transforms.unwrap.drop.tombstones": "true",
+        "transforms.unwrap.delete.handling.mode": "drop",
+        "transforms.route.type": "org.apache.kafka.connect.transforms.RegexRouter",
+        "transforms.route.regex": "ledger.public.(.*)",
+        "transforms.route.replacement": "ledger.journal.events",
+        "key.converter": "org.apache.kafka.connect.storage.StringConverter",
+        "value.converter": "io.debezium.converters.BinaryDataConverter",
+        "value.converter.delegate.converter.type": "io.confluent.connect.protobuf.ProtobufConverter",
+        "value.converter.delegate.converter.type.schema.registry.url": "http://schema-registry:8081",
+        "value.converter.delegate.converter.type.auto.register.schemas": "true",
+        "value.converter.delegate.converter.type.use.latest.version": "true",
+        "errors.tolerance": "none",
+        "errors.log.enable": "true",
+        "errors.log.include.messages": "true"
+      }
+    }

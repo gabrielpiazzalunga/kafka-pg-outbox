@@ -1,0 +1,54 @@
+syntax = "proto3";
+package ledger.public.journal_entries;
+
+import "confluent/type/decimal.proto";
+import "confluent/type/meta.proto";
+
+message Value {
+  int64 entry_id = 1;
+  string idempotency_key = 2;
+  string event_type = 3;
+  string event_timestamp = 4;
+  string posted_at = 5;
+  string transaction_id = 6;
+  string merchant_id = 7;
+  string merchant_cnpj = 8;
+  string network = 9;
+  string arn = 10;
+  string network_ref_id = 11;
+  string authorization_code = 12;
+  int32 installment_number = 13 [(confluent.field_meta) = {
+    params: [
+      {
+        key: "connect.type",
+        value: "int16"
+      }
+    ]
+  }];
+  int32 installment_total = 14 [(confluent.field_meta) = {
+    params: [
+      {
+        key: "connect.type",
+        value: "int16"
+      }
+    ]
+  }];
+  string installment_plan_id = 15;
+  int32 clearing_run_id = 16;
+  int32 clearing_date = 17;
+  confluent.type.Decimal gross_amount = 18 [(confluent.field_meta) = {
+    params: [
+      {
+        value: "18",
+        key: "precision"
+      },
+      {
+        value: "2",
+        key: "scale"
+      }
+    ]
+  }];
+  string currency = 19;
+  string source_system = 20;
+  string correlation_id = 21;
+}

@@ -21,6 +21,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Messaging.Contracts", "Mess
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FeedIngestion.Service", "FeedIngestion.Service\FeedIngestion.Service.csproj", "{725A8B26-0416-4858-8A0D-D9C4B4D820D1}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Ledger.Service", "Ledger.Service\Ledger.Service.csproj", "{947B88FE-8F7C-4CBC-AC16-903D996C8A43}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -103,6 +105,18 @@ Global
 		{725A8B26-0416-4858-8A0D-D9C4B4D820D1}.Release|x64.Build.0 = Release|Any CPU
 		{725A8B26-0416-4858-8A0D-D9C4B4D820D1}.Release|x86.ActiveCfg = Release|Any CPU
 		{725A8B26-0416-4858-8A0D-D9C4B4D820D1}.Release|x86.Build.0 = Release|Any CPU
+		{947B88FE-8F7C-4CBC-AC16-903D996C8A43}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{947B88FE-8F7C-4CBC-AC16-903D996C8A43}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{947B88FE-8F7C-4CBC-AC16-903D996C8A43}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{947B88FE-8F7C-4CBC-AC16-903D996C8A43}.Debug|x64.Build.0 = Debug|Any CPU
+		{947B88FE-8F7C-4CBC-AC16-903D996C8A43}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{947B88FE-8F7C-4CBC-AC16-903D996C8A43}.Debug|x86.Build.0 = Debug|Any CPU
+		{947B88FE-8F7C-4CBC-AC16-903D996C8A43}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{947B88FE-8F7C-4CBC-AC16-903D996C8A43}.Release|Any CPU.Build.0 = Release|Any CPU
+		{947B88FE-8F7C-4CBC-AC16-903D996C8A43}.Release|x64.ActiveCfg = Release|Any CPU
+		{947B88FE-8F7C-4CBC-AC16-903D996C8A43}.Release|x64.Build.0 = Release|Any CPU
+		{947B88FE-8F7C-4CBC-AC16-903D996C8A43}.Release|x86.ActiveCfg = Release|Any CPU
+		{947B88FE-8F7C-4CBC-AC16-903D996C8A43}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
