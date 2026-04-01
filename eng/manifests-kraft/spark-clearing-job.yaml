@@ -1,0 +1,72 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: spark-clearing-job
+spec:
+  template:
+    spec:
+      containers:
+        - name: clearing
+          image: spark-ingestion:v26
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: CLEARING_NETWORK
+              value: "visa"
+            - name: PREVIOUS_CUTOFF
+              value: "1970-01-01T00:00:00Z"
+            - name: CURRENT_CUTOFF
+              value: "2099-12-31T23:59:59Z"
+            - name: CLEARING_DATE
+              value: "2026-03-26"
+            - name: S3_ENDPOINT
+              value: "http://minio:9000"
+            - name: S3_ACCESS_KEY
+              value: "minioadmin"
+            - name: S3_SECRET_KEY
+              value: "minioadmin"
+            - name: AWS_REGION
+              value: "us-east-1"
+            - name: PYTHONUNBUFFERED
+              value: "1"
+          command: ["/opt/spark/bin/spark-submit"]
+          args:
+            - "--conf"
+            - "spark.sql.catalog.clearing_lake=org.apache.iceberg.spark.SparkCatalog"
+            - "--conf"
+            - "spark.sql.catalog.clearing_lake.type=jdbc"
+            - "--conf"
+            - "spark.sql.catalog.clearing_lake.uri=jdbc:postgresql://postgres:5432/iceberg_catalog"
+            - "--conf"
+            - "spark.sql.catalog.clearing_lake.jdbc.user=postgres"
+            - "--conf"
+            - "spark.sql.catalog.clearing_lake.jdbc.password=postgres"
+            - "--conf"
+            - "spark.sql.catalog.clearing_lake.warehouse=s3a://clearing-lake/warehouse"
+            - "--conf"
+            - "spark.sql.catalog.clearing_lake.io-impl=org.apache.iceberg.aws.s3.S3FileIO"
+            - "--conf"
+            - "spark.sql.catalog.clearing_lake.s3.endpoint=http://minio:9000"
+            - "--conf"
+            - "spark.sql.catalog.clearing_lake.s3.path-style-access=true"
+            - "--conf"
+            - "spark.sql.catalog.clearing_lake.s3.access-key-id=minioadmin"
+            - "--conf"
+            - "spark.sql.catalog.clearing_lake.s3.secret-access-key=minioadmin"
+            - "--conf"
+            - "spark.hadoop.fs.s3a.access.key=minioadmin"
+            - "--conf"
+            - "spark.hadoop.fs.s3a.secret.key=minioadmin"
+            - "--conf"
+            - "spark.hadoop.fs.s3a.endpoint=http://minio:9000"
+            - "--conf"
+            - "spark.hadoop.fs.s3a.path.style.access=true"
+            - "/app/clearing_job.py"
+          resources:
+            requests:
+              memory: "1024Mi"
+              cpu: "500m"
+            limits:
+              memory: "2048Mi"
+              cpu: "1000m"
+      restartPolicy: Never
+  backoffLimit: 1

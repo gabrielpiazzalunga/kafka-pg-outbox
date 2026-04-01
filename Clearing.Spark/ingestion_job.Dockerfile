@@ -4,7 +4,8 @@ FROM apache/spark:3.5.0-python3
 USER root
 
 # Install dependencies for building descriptors and downloading jars
-RUN apt-get update && apt-get install -y curl protobuf-compiler && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y curl protobuf-compiler python3-pip && rm -rf /var/lib/apt/lists/*
+RUN pip3 install boto3
 
 # --- DOWNLOAD JARS ---
 ENV JARS_DIR=/opt/spark/jars
@@ -28,7 +29,7 @@ COPY Messaging.Kafka/Messaging.Contracts/ProtoSchemas/ ./ProtoSchemas/
 RUN protoc -I=./ProtoSchemas --include_imports --include_source_info --descriptor_set_out=journal.desc ./ProtoSchemas/ledger_journal_entry.proto
 
 # --- FINALIZE ---
-COPY Clearing.Spark/ingestion_job.py .
+COPY Clearing.Spark/ .
 
 # Apache Spark user id 185
 USER 185

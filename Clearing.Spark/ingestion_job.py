@@ -25,6 +25,7 @@ spark = SparkSession.builder \
     .config("spark.sql.catalog.clearing_lake.uri", JDBC_URL) \
     .config("spark.sql.catalog.clearing_lake.jdbc.user", JDBC_USER) \
     .config("spark.sql.catalog.clearing_lake.jdbc.password", JDBC_PASSWORD) \
+    .config("spark.sql.catalog.clearing_lake.jdbc.schema-version", "V1") \
     .config("spark.sql.catalog.clearing_lake.warehouse", "s3a://clearing-lake/warehouse") \
     .config("spark.sql.catalog.clearing_lake.io-impl", "org.apache.iceberg.aws.s3.S3FileIO") \
     .config("spark.sql.catalog.clearing_lake.s3.endpoint", S3_ENDPOINT) \
@@ -39,6 +40,9 @@ spark = SparkSession.builder \
     .getOrCreate()
 
 # --- 1. Ensure Table Exists ---
+# --- Pre-Create the Iceberg Table ---
+# This ensures the table exists with the correct partitioning ('network' and 'clearing_date')
+# before the streaming job starts. Partitioning by clearing_date allows for fast batch deletions/retries.
 spark.sql("""
     CREATE TABLE IF NOT EXISTS clearing_lake.captured_transactions (
         entry_id            BIGINT,
@@ -64,13 +68,18 @@ df_kafka = spark.readStream \
     .option("kafka.bootstrap.servers", KAFKA_BOOTSTRAP) \
     .option("subscribe", "ledger.journal.events") \
     .option("startingOffsets", "earliest") \
+    .option("failOnDataLoss", "false") \
+    .option("kafka.metadata.max.age.ms", "1000") \
+    .option("kafka.consumer.config.retry.backoff.ms", "500") \
     .load()
 
-# --- 3. Slice Confluent Magic Header (5 bytes) and Deserialize ---
-# Confluent Encoding: 0x00 (Magic Byte) + Schema ID (4 bytes) + Protobuf Payload
+# --- Deserialize Protobuf with Confluent Header Skip ---
+# Confluent Wire Format: 0x00 (1) + Schema ID (4) + Message Index (1) = 6 bytes total.
+# Spark's substring is 1-indexed, so starting at position 7 effectively removes the first 6 bytes.
+# This allows 'from_protobuf' to read the clean Protobuf payload.
 df_proto = df_kafka.select(
     from_protobuf(
-        expr("substring(value, 7, length(value))"), # Strip the first 6 bytes (0x00 + 4-byte schema ID + 1-byte version/flags)
+        expr("substring(value, 7, length(value))"), 
         PROTO_MESSAGE_NAME, 
         PROTO_DESCRIPTOR_PATH
     ).alias("msg")
@@ -99,16 +108,26 @@ df_final = df_proto.select(
     col("msg.currency"),
     col("msg.installment_number"),
     col("msg.installment_total"),
-    expr("date_add('1970-01-01', msg.clearing_date)").alias("clearing_date"),
+    col("msg.event_timestamp").cast("date").alias("clearing_date"),
     col("msg.event_type")
 ).filter(col("msg.event_type") == "capture")
 
 # --- 5. Write to Iceberg ---
+# --- 5. Write to Iceberg ---
+def merge_to_iceberg(batch_df, batch_id):
+    batch_df.createOrReplaceTempView("updates")
+    batch_df._jdf.sparkSession().sql("""
+        MERGE INTO clearing_lake.captured_transactions t
+        USING updates s
+        ON t.entry_id = s.entry_id
+        WHEN MATCHED THEN UPDATE SET 
+            t.event_type = s.event_type
+        WHEN NOT MATCHED THEN INSERT *
+    """)
+
 query = df_final.writeStream \
-    .format("iceberg") \
-    .outputMode("append") \
+    .foreachBatch(merge_to_iceberg) \
     .trigger(processingTime="1 minute") \
-    .option("path", "clearing_lake.captured_transactions") \
     .option("checkpointLocation", "s3a://clearing-lake/checkpoints/ingestion") \
     .start()
 
