@@ -1,0 +1,123 @@
+Build started 08/04/2026 11:36:04.
+     1>Project "/Users/gabrielpiazzalunga/projects/Messaging.Kafka/Messaging.Kafka/Clearing.IntegrationTests/Clearing.IntegrationTests.csproj" on node 1 (Restore target(s)).
+     1>_GetAllRestoreProjectPathItems:
+         Determining projects to restore...
+       Restore:
+         X.509 certificate chain validation will use the fallback certificate bundle at '/Users/gabrielpiazzalunga/.dotnet/sdk/9.0.100/trustedroots/codesignctl.pem'.
+         X.509 certificate chain validation will use the fallback certificate bundle at '/Users/gabrielpiazzalunga/.dotnet/sdk/9.0.100/trustedroots/timestampctl.pem'.
+         Assets file has not changed. Skipping assets file writing. Path: /Users/gabrielpiazzalunga/projects/Messaging.Kafka/Messaging.Kafka/Clearing.IntegrationTests/obj/project.assets.json
+         Restored /Users/gabrielpiazzalunga/projects/Messaging.Kafka/Messaging.Kafka/Clearing.IntegrationTests/Clearing.IntegrationTests.csproj (in 18 ms).
+         
+         NuGet Config files used:
+             /Users/gabrielpiazzalunga/projects/Messaging.Kafka/Messaging.Kafka/NuGet.Config
+             /Users/gabrielpiazzalunga/.nuget/NuGet/NuGet.Config
+         
+         Feeds used:
+             https://api.nuget.org/v3/index.json
+         All projects are up-to-date for restore.
+     1>Done Building Project "/Users/gabrielpiazzalunga/projects/Messaging.Kafka/Messaging.Kafka/Clearing.IntegrationTests/Clearing.IntegrationTests.csproj" (Restore target(s)).
+   1:7>Project "/Users/gabrielpiazzalunga/projects/Messaging.Kafka/Messaging.Kafka/Clearing.IntegrationTests/Clearing.IntegrationTests.csproj" on node 1 (VSTest target(s)).
+     1>BuildProject:
+         Build started, please wait...
+   1:7>Project "/Users/gabrielpiazzalunga/projects/Messaging.Kafka/Messaging.Kafka/Clearing.IntegrationTests/Clearing.IntegrationTests.csproj" (1:7) is building "/Users/gabrielpiazzalunga/projects/Messaging.Kafka/Messaging.Kafka/Clearing.IntegrationTests/Clearing.IntegrationTests.csproj" (1:8) on node 1 (default targets).
+     1>GenerateTargetFrameworkMonikerAttribute:
+       Skipping target "GenerateTargetFrameworkMonikerAttribute" because all output files are up-to-date with respect to the input files.
+       CoreGenerateAssemblyInfo:
+       Skipping target "CoreGenerateAssemblyInfo" because all output files are up-to-date with respect to the input files.
+       _GenerateSourceLinkFile:
+         Source Link file 'obj/Debug/net9.0/Clearing.IntegrationTests.sourcelink.json' is up-to-date.
+       CoreCompile:
+       Skipping target "CoreCompile" because all output files are up-to-date with respect to the input files.
+       _CopyOutOfDateSourceItemsToOutputDirectory:
+       Skipping target "_CopyOutOfDateSourceItemsToOutputDirectory" because all output files are up-to-date with respect to the input files.
+       GenerateBuildDependencyFile:
+       Skipping target "GenerateBuildDependencyFile" because all output files are up-to-date with respect to the input files.
+       GenerateBuildRuntimeConfigurationFiles:
+       Skipping target "GenerateBuildRuntimeConfigurationFiles" because all output files are up-to-date with respect to the input files.
+       CopyFilesToOutputDirectory:
+         Clearing.IntegrationTests -> /Users/gabrielpiazzalunga/projects/Messaging.Kafka/Messaging.Kafka/Clearing.IntegrationTests/bin/Debug/net9.0/Clearing.IntegrationTests.dll
+     1>Done Building Project "/Users/gabrielpiazzalunga/projects/Messaging.Kafka/Messaging.Kafka/Clearing.IntegrationTests/Clearing.IntegrationTests.csproj" (default targets).
+     1>BuildProject:
+         Build completed.
+         
+Test run for /Users/gabrielpiazzalunga/projects/Messaging.Kafka/Messaging.Kafka/Clearing.IntegrationTests/bin/Debug/net9.0/Clearing.IntegrationTests.dll (.NETCoreApp,Version=v9.0)
+VSTest version 17.12.0 (arm64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+/Users/gabrielpiazzalunga/projects/Messaging.Kafka/Messaging.Kafka/Clearing.IntegrationTests/bin/Debug/net9.0/Clearing.IntegrationTests.dll
+[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v2.8.2+699d445a1a (64-bit .NET 9.0.0)
+[xUnit.net 00:00:00.03]   Discovering: Clearing.IntegrationTests
+[xUnit.net 00:00:00.04]   Discovered:  Clearing.IntegrationTests
+[xUnit.net 00:00:00.04]   Starting:    Clearing.IntegrationTests
+[testcontainers.org 00:00:00.09] Connected to Docker:
+  Host: unix:///var/run/docker.sock
+  Server Version: 29.3.0
+  Kernel Version: 6.12.76-linuxkit
+  API Version: 1.54
+  Operating System: Docker Desktop
+  Total Memory: 7.65 GB
+  Labels: 
+    com.docker.desktop.address=unix:///Users/gabrielpiazzalunga/Library/Containers/com.docker.docker/Data/docker-cli.sock
+[testcontainers.org 00:00:00.22] Docker network 8da57ac50323 created
+[testcontainers.org 00:00:00.42] Docker container 87831abdb094 created
+[testcontainers.org 00:00:00.49] Start Docker container 87831abdb094
+[testcontainers.org 00:00:00.90] Wait for Docker container 87831abdb094 to complete readiness checks
+[testcontainers.org 00:00:01.94] Docker container 87831abdb094 ready
+[testcontainers.org 00:00:02.18] Docker container 34109df20467 created
+[testcontainers.org 00:00:02.19] Start Docker container 34109df20467
+[testcontainers.org 00:00:02.20] Docker container 486eb1d0b818 created
+[testcontainers.org 00:00:02.23] Start Docker container 486eb1d0b818
+[testcontainers.org 00:00:02.79] Add file to tar archive: Content length: 390 byte(s), Target file: "/testcontainers.sh", UID: 0, GID: 0, Mode: 0755
+[testcontainers.org 00:00:02.80] Copy tar archive to container: Content length: 390 byte(s), Docker container: 486eb1d0b818
+[testcontainers.org 00:00:02.80] Wait for Docker container 34109df20467 to complete readiness checks
+[testcontainers.org 00:00:02.81] Execute "pg_isready --host localhost --dbname ledger --username postgres" at Docker container 34109df20467
+[testcontainers.org 00:00:02.82] Wait for Docker container 486eb1d0b818 to complete readiness checks
+[testcontainers.org 00:00:04.42] Execute "pg_isready --host localhost --dbname ledger --username postgres" at Docker container 34109df20467
+[testcontainers.org 00:00:05.75] Execute "pg_isready --host localhost --dbname ledger --username postgres" at Docker container 34109df20467
+[testcontainers.org 00:00:06.89] Execute "pg_isready --host localhost --dbname ledger --username postgres" at Docker container 34109df20467
+[testcontainers.org 00:00:06.99] Docker container 34109df20467 ready
+[testcontainers.org 00:00:09.94] Docker container 486eb1d0b818 ready
+[testcontainers.org 00:00:10.07] Docker container fe237ed3d3fe created
+[testcontainers.org 00:00:10.08] Start Docker container fe237ed3d3fe
+[testcontainers.org 00:00:10.37] Wait for Docker container fe237ed3d3fe to complete readiness checks
+[testcontainers.org 00:00:18.59] Docker container fe237ed3d3fe ready
+[testcontainers.org 00:00:18.71] Docker container d92c9d7443dc created
+[testcontainers.org 00:00:18.72] Start Docker container d92c9d7443dc
+[testcontainers.org 00:00:19.00] Wait for Docker container d92c9d7443dc to complete readiness checks
+[testcontainers.org 00:00:33.67] Docker container d92c9d7443dc ready
+[xUnit.net 00:01:36.48]     Clearing.IntegrationTests.ClearingPipelineTests.Insert_JournalEntry_Should_Appear_In_Kafka_Via_Debezium [FAIL]
+[xUnit.net 00:01:36.48]       Expected to find transaction 286ece6a-8275-4b14-97cc-1de93bc01014 (ARN 77610250770956909850811) in Kafka topic 'ledger.journal.events' within 60 seconds. Last record seen: NONE
+[xUnit.net 00:01:36.48]       Stack Trace:
+[xUnit.net 00:01:36.48]         /Users/gabrielpiazzalunga/projects/Messaging.Kafka/Messaging.Kafka/Clearing.IntegrationTests/ClearingPipelineTests.cs(113,0): at Clearing.IntegrationTests.ClearingPipelineTests.Insert_JournalEntry_Should_Appear_In_Kafka_Via_Debezium()
+[xUnit.net 00:01:36.48]         /Users/gabrielpiazzalunga/projects/Messaging.Kafka/Messaging.Kafka/Clearing.IntegrationTests/ClearingPipelineTests.cs(124,0): at Clearing.IntegrationTests.ClearingPipelineTests.Insert_JournalEntry_Should_Appear_In_Kafka_Via_Debezium()
+[xUnit.net 00:01:36.48]         --- End of stack trace from previous location ---
+  Failed Clearing.IntegrationTests.ClearingPipelineTests.Insert_JournalEntry_Should_Appear_In_Kafka_Via_Debezium [1 m 1 s]
+  Error Message:
+   Expected to find transaction 286ece6a-8275-4b14-97cc-1de93bc01014 (ARN 77610250770956909850811) in Kafka topic 'ledger.journal.events' within 60 seconds. Last record seen: NONE
+  Stack Trace:
+     at Clearing.IntegrationTests.ClearingPipelineTests.Insert_JournalEntry_Should_Appear_In_Kafka_Via_Debezium() in /Users/gabrielpiazzalunga/projects/Messaging.Kafka/Messaging.Kafka/Clearing.IntegrationTests/ClearingPipelineTests.cs:line 113
+   at Clearing.IntegrationTests.ClearingPipelineTests.Insert_JournalEntry_Should_Appear_In_Kafka_Via_Debezium() in /Users/gabrielpiazzalunga/projects/Messaging.Kafka/Messaging.Kafka/Clearing.IntegrationTests/ClearingPipelineTests.cs:line 124
+--- End of stack trace from previous location ---
+[testcontainers.org 00:01:38.57] Delete Docker container d92c9d7443dc
+[testcontainers.org 00:01:38.95] Delete Docker container fe237ed3d3fe
+[testcontainers.org 00:01:39.26] Delete Docker container 486eb1d0b818
+  Passed Clearing.IntegrationTests.ClearingPipelineTests.Insert_Multiple_Networks_Should_All_Arrive_In_Kafka [2 s]
+[testcontainers.org 00:01:39.62] Delete Docker container 34109df20467
+[testcontainers.org 00:01:39.86] Delete Docker network 8da57ac50323
+[xUnit.net 00:01:40.14]   Finished:    Clearing.IntegrationTests
+
+Test Run Failed.
+Total tests: 2
+     Passed: 1
+     Failed: 1
+ Total time: 1,6788 Minutes
+       _VSTestConsole:
+         MSB4181: The "VSTestTask" task returned false but did not log an error.
+     1>Done Building Project "/Users/gabrielpiazzalunga/projects/Messaging.Kafka/Messaging.Kafka/Clearing.IntegrationTests/Clearing.IntegrationTests.csproj" (VSTest target(s)) -- FAILED.
+
+Build FAILED.
+    0 Warning(s)
+    0 Error(s)
+
+Time Elapsed 00:01:41.44

@@ -18,6 +18,19 @@ elif [[ "$COMMAND" == "resume" ]]; then
     sleep 5
     # Start applications (Ledger, Ingestion, etc.)
     kubectl scale deployment --all --replicas=1
+
+    echo "--- Restarting Initialization Jobs ---"
+    # Re-apply jobs to ensure topics, buckets, and connectors are created if missing
+    kubectl delete jobs --all
+    kubectl apply -f eng/manifests-kraft/minio.yaml
+    kubectl apply -f eng/manifests-kraft/init-topics.yaml
+    # We must apply the configmap as well, just in case
+    kubectl apply -f eng/manifests-kraft/configmap-clearing-debezium.yaml
+    kubectl apply -f eng/manifests-kraft/init-clearing-connector.yaml
+    kubectl apply -f eng/manifests-kraft/configmap-feed-ingestion-debezium.yaml
+    kubectl apply -f eng/manifests-kraft/init-feed-ingestion-connector.yaml
+    kubectl apply -f eng/manifests-kraft/postgres-init.yaml 2>/dev/null || true
+
     echo "--- Cluster Resuming. Check pods with 'kubectl get pods' in 30 seconds. ---"
 
 elif [[ "$COMMAND" == "status" ]]; then

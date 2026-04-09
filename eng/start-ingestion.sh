@@ -3,13 +3,13 @@
 # --- Ingestion Management Script ---
 # This script builds and restarts the Spark Ingestion job.
 
-# 1. Build the updated ingestion image (v20)
+# 1. Build the updated ingestion image (v26)
 echo "Building Spark Ingestion image..."
-docker build -f Clearing.Spark/ingestion_job.Dockerfile -t spark-ingestion:v20 .
+docker build -f Clearing.Spark/ingestion_job.Dockerfile -t spark-ingestion:v26 .
 
 # 2. Update the Kubernetes manifest to use the new image
-echo "Updating manifest to v20..."
-sed -i '' 's/image: spark-ingestion:.*/image: spark-ingestion:v20/' eng/manifests-kraft/spark-ingestion.yaml
+echo "Updating manifest to v26..."
+sed -i '' 's/image: spark-ingestion:.*/image: spark-ingestion:v26/' eng/manifests-kraft/spark-ingestion.yaml
 
 # 3. Apply the manifest and restart
 echo "Deploying to Kubernetes..."

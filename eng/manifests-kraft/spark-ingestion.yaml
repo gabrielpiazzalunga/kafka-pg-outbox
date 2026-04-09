@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
         - name: ingestion
-          image: spark-ingestion:v20
+          image: spark-ingestion:v26
           imagePullPolicy: IfNotPresent
           env:
             - name: KAFKA_BOOTSTRAP
