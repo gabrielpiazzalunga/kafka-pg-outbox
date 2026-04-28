@@ -1,8 +1,9 @@
 import os
 import boto3
 import math
+import pandas as pd
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, sum, count
+from pyspark.sql.functions import col, sum, count, spark_partition_id
 
 # --- Input Configuration ---
 # We strip and lower to avoid common trailing space/caps errors in K8s manifests
@@ -32,33 +33,41 @@ spark = SparkSession.builder.getOrCreate()
 mpu = s3_client.create_multipart_upload(Bucket=BUCKET, Key=S3_KEY)
 MPU_ID = mpu["UploadId"]
 
-def upload_part(idx, iterator):
-    rows = list(iterator)
-    if not rows: return []
-    
-    s3 = boto3.client("s3", 
+def upload_part(pdf_iter):
+    # Collect all Arrow batches for this partition into a single DataFrame
+    batches = list(pdf_iter)
+    if not batches:
+        return
+
+    pdf = pd.concat(batches, ignore_index=True)
+    if pdf.empty:
+        return
+
+    idx = int(pdf["_partition_id"].iloc[0])
+
+    s3 = boto3.client("s3",
                       endpoint_url=S3_ENDPOINT,
                       aws_access_key_id=S3_ACCESS_KEY,
                       aws_secret_access_key=S3_SECRET_KEY)
-    
+
     # Format rows to fixed-width string
     # Columns matches Visa Base II requirement (Legacy entry ID, ARN, and Gross Amount)
-    def format_row(r):
-        eid = str(r.entry_id or "")
-        arn = str(r.arn or "")
-        amt = float(r.gross_amount or 0.0)
+    def format_row(row):
+        eid = str(row["entry_id"] or "")
+        arn = str(row["arn"] or "")
+        amt = float(row["gross_amount"] or 0.0)
         return f"{eid:23}{arn:23}{amt:>12.2f}\n"
 
-    content = "".join([format_row(r) for r in rows])
-    
+    content = "".join(pdf.apply(format_row, axis=1))
+
     response = s3.upload_part(
         Bucket=BUCKET, Key=S3_KEY,
         PartNumber=idx + 1,
         UploadId=MPU_ID,
         Body=content.encode("utf-8")
     )
-    
-    return [{"PartNumber": idx + 1, "ETag": response["ETag"]}]
+
+    yield pd.DataFrame([{"PartNumber": idx + 1, "ETag": response["ETag"]}])
 
 def main():
     print(f"DEBUG: Filtering for Network={CLEARING_NETWORK}, bounds [{PREVIOUS_CUTOFF}, {CURRENT_CUTOFF}]", flush=True)
@@ -94,9 +103,11 @@ def main():
     num_partitions = max(1, math.ceil(num_records / 200000))
     print(f"DEBUG: Repartitioning {num_records} rows into {num_partitions} S3 parts.", flush=True)
 
-    parts_info = df.repartition(num_partitions) \
-        .rdd.mapPartitionsWithIndex(upload_part) \
+    parts_rows = df.repartition(num_partitions) \
+        .withColumn("_partition_id", spark_partition_id()) \
+        .mapInPandas(upload_part, schema="PartNumber int, ETag string") \
         .collect()
+    parts_info = [{"PartNumber": r.PartNumber, "ETag": r.ETag} for r in parts_rows]
 
     s3_client.complete_multipart_upload(
         Bucket=BUCKET, Key=S3_KEY,
