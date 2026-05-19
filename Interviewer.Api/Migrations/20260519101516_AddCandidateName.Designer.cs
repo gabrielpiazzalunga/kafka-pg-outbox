@@ -4,6 +4,7 @@ using System.Text.Json;
 using Interviewer.Api.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -12,9 +13,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Interviewer.Api.Migrations
 {
     [DbContext(typeof(InterviewerDbContext))]
-    partial class InterviewerDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260519101516_AddCandidateName")]
+    partial class AddCandidateName
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder

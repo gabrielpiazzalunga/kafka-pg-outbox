@@ -29,8 +29,8 @@ namespace Interviewer.Api.Models
         public Guid Id { get; set; }
         
         [Required]
-        [MaxLength(100)]
-        public string SessionCode { get; set; } = string.Empty;
+        [MaxLength(200)]
+        public string CandidateName { get; set; } = string.Empty;
 
         public Guid TemplateId { get; set; }
         public InterviewTemplate Template { get; set; } = null!;

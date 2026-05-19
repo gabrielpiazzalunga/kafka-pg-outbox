@@ -19,31 +19,54 @@ namespace Interviewer.Api.Controllers
             _context = context;
         }
 
-        public class StartRequest { public string Code { get; set; } = string.Empty; }
+        [HttpGet("templates")]
+        public async Task<IActionResult> GetTemplates()
+        {
+            var templates = await _context.InterviewTemplates
+                .Select(t => new { t.Id, t.Title, t.Code })
+                .ToListAsync();
+            return Ok(templates);
+        }
+
+        [HttpGet]
+        public async Task<IActionResult> GetAllSessions()
+        {
+            var sessions = await _context.InterviewSessions
+                .Include(s => s.Template)
+                .OrderByDescending(s => s.StartedAt)
+                .Select(s => new {
+                    s.Id,
+                    s.CandidateName,
+                    TemplateTitle = s.Template.Title,
+                    s.StartedAt,
+                    s.EndedAt,
+                    s.OverallRating
+                })
+                .ToListAsync();
+            
+            return Ok(sessions);
+        }
+
+        public class StartRequest { 
+            public Guid TemplateId { get; set; }
+            public string CandidateName { get; set; } = string.Empty; 
+        }
 
         [HttpPost("start")]
         public async Task<IActionResult> StartInterview([FromBody] StartRequest request)
         {
-            // Get the default template
-            var template = await _context.InterviewTemplates.FirstOrDefaultAsync();
-            if (template == null) return NotFound("No interview templates found in database.");
+            var template = await _context.InterviewTemplates.FindAsync(request.TemplateId);
+            if (template == null) return NotFound("Template not found.");
 
-            // Create or resume session
-            var session = await _context.InterviewSessions
-                .FirstOrDefaultAsync(s => s.SessionCode == request.Code);
-
-            if (session == null)
+            var session = new InterviewSession
             {
-                session = new InterviewSession
-                {
-                    Id = Guid.NewGuid(),
-                    SessionCode = request.Code,
-                    TemplateId = template.Id,
-                    StartedAt = DateTime.UtcNow
-                };
-                _context.InterviewSessions.Add(session);
-                await _context.SaveChangesAsync();
-            }
+                Id = Guid.NewGuid(),
+                CandidateName = request.CandidateName,
+                TemplateId = template.Id,
+                StartedAt = DateTime.UtcNow
+            };
+            _context.InterviewSessions.Add(session);
+            await _context.SaveChangesAsync();
 
             return Ok(new
             {
@@ -104,6 +127,40 @@ namespace Interviewer.Api.Controllers
 
             await _context.SaveChangesAsync();
             return Ok();
+        }
+
+        [HttpGet("{id}/results")]
+        public async Task<IActionResult> GetResults(Guid id)
+        {
+            var session = await _context.InterviewSessions
+                .Include(s => s.Template)
+                .FirstOrDefaultAsync(s => s.Id == id);
+            
+            if (session == null) return NotFound();
+
+            var blocks = await _context.BlockStates
+                .Where(b => b.SessionId == id)
+                .ToListAsync();
+
+            return Ok(new
+            {
+                session = new {
+                    session.Id,
+                    session.CandidateName,
+                    session.StartedAt,
+                    session.EndedAt,
+                    session.OverallRating,
+                    session.SummaryNotes
+                },
+                config = session.Template.ConfigJson,
+                blockStates = blocks.Select(b => new {
+                    b.BlockConfigId,
+                    b.TimeSpentSeconds,
+                    b.NotesJson,
+                    b.CheckedItemsJson,
+                    b.RatingsJson
+                })
+            });
         }
     }
 }

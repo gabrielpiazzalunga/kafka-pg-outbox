@@ -1,73 +1,56 @@
-# React + TypeScript + Vite
+# Interviewer App
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+This project consists of a React (Vite) frontend and a .NET 9 Web API backend to run the internal interviewer platform.
 
-Currently, two official plugins are available:
+## Prerequisites
+- Node.js (v18+)
+- .NET 9.0 SDK
+- PostgreSQL (running locally on port 5432 with a database named `interviewer`)
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+---
 
-## React Compiler
+## 1. Starting the Backend (.NET API)
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+The backend handles the templates, saves the session notes, and manages the Postgres database migrations automatically.
 
-## Expanding the ESLint configuration
+1. Open a terminal and navigate to the API directory:
+   ```bash
+   cd Interviewer.Api
+   ```
+2. Run the application:
+   ```bash
+   dotnet run
+   ```
+   *(Note: The first time you run this, it will automatically connect to Postgres, apply the EF Core migrations, and seed the initial "Senior Software Engineer" template.)*
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+The backend will start and listen on **http://localhost:5243**.
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+---
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+## 2. Starting the Frontend (React + Vite)
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+The frontend is a React application built with Vite and TypeScript.
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+1. Open a **new** terminal and navigate to the frontend directory:
+   ```bash
+   cd interviewer-app
+   ```
+2. Install the dependencies (if you haven't already):
+   ```bash
+   npm install
+   ```
+3. Start the Vite development server:
+   ```bash
+   npm run dev
+   ```
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+The frontend will start and listen on **http://localhost:5173**.
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+---
+
+## Usage
+Once both services are running:
+1. Open your browser and navigate to `http://localhost:5173`.
+2. Ensure the Template dropdown populates (this confirms the frontend is talking to the backend).
+3. Enter a candidate's name and hit **Start Interview**.
+4. When finished, hit **End Interview**, fill out the summary, and view the **Results Dashboard**!

@@ -13,9 +13,7 @@ namespace Interviewer.Api.Data
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
-            modelBuilder.Entity<InterviewSession>()
-                .HasIndex(s => s.SessionCode)
-                .IsUnique();
+            // SessionCode is removed, no index needed.
                 
             modelBuilder.Entity<InterviewTemplate>()
                 .HasIndex(t => t.Code)

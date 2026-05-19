@@ -29,12 +29,52 @@ export interface BlockState {
   timeSpentSeconds: number;
 }
 
+export interface TemplateSummary {
+  id: string;
+  title: string;
+  code: string;
+}
+
+export interface InterviewResult {
+  session: {
+    id: string;
+    candidateName: string;
+    startedAt: string;
+    endedAt: string | null;
+    overallRating: number | null;
+    summaryNotes: string | null;
+  };
+  config: InterviewConfig;
+  blockStates: BlockState[];
+}
+
+export interface SessionSummary {
+  id: string;
+  candidateName: string;
+  templateTitle: string;
+  startedAt: string;
+  endedAt: string | null;
+  overallRating: number | null;
+}
+
 export const api = {
-  startInterview: async (code: string): Promise<{ interviewId: string, config: InterviewConfig }> => {
+  getSessions: async (): Promise<SessionSummary[]> => {
+    const res = await fetch(`${BASE_URL}`);
+    if (!res.ok) throw new Error('Failed to fetch sessions');
+    return res.json();
+  },
+
+  getTemplates: async (): Promise<TemplateSummary[]> => {
+    const res = await fetch(`${BASE_URL}/templates`);
+    if (!res.ok) throw new Error('Failed to fetch templates');
+    return res.json();
+  },
+
+  startInterview: async (templateId: string, candidateName: string): Promise<{ interviewId: string, config: InterviewConfig }> => {
     const res = await fetch(`${BASE_URL}/start`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ code })
+      body: JSON.stringify({ templateId, candidateName })
     });
     if (!res.ok) throw new Error('Failed to start interview');
     return res.json();
@@ -59,5 +99,11 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ summaryNotes, overallRating })
     });
+  },
+
+  getResults: async (interviewId: string): Promise<InterviewResult> => {
+    const res = await fetch(`${BASE_URL}/${interviewId}/results`);
+    if (!res.ok) throw new Error('Failed to fetch results');
+    return res.json();
   }
 };
